@@ -708,7 +708,9 @@ export const submitDetectiveInvestigation = async (
     }
 
     if (!game.config.detectiveOncePerRound) {
-      const remaining = detective.detectiveChecksRemaining ?? game.config.detectiveChecksLimit ?? 0;
+      // Use actual mafia count, not config limit
+      const mafiaCount = game.players.filter(p => p.role === "mafia" && p.isAlive).length;
+      const remaining = detective.detectiveChecksRemaining ?? mafiaCount;
       if (remaining <= 0) {
         throw new Error("Detective has no investigations remaining.");
       }
@@ -737,7 +739,9 @@ export const submitDetectiveInvestigation = async (
     const remainingCharges = detector.detectiveChecksRemaining;
 
     if (!oncePerRound) {
-      const baseline = remainingCharges ?? game.config.detectiveChecksLimit ?? 0;
+      // Use actual mafia count as fallback, not config limit
+      const mafiaCount = game.players.filter(p => p.role === "mafia" && p.isAlive).length;
+      const baseline = remainingCharges ?? mafiaCount;
       const nextRemaining = Math.max(0, baseline - 1);
       if (nextRemaining <= 0) {
         const {
@@ -774,6 +778,26 @@ export const submitDetectiveInvestigation = async (
       nightState: updatedState,
       lastAction: `Detective completed an investigation`,
     });
+
+    // Create detective investigation event
+    const eventsRef = collection(db, GAMES_COLLECTION, gameId, "events");
+    const investigationEvent = {
+      gameId,
+      type: "detective-investigation" as const,
+      phase: game.phase,
+      round: game.round,
+      timestamp: now,
+      data: {
+        detectiveUid,
+        detectiveName: detective.name,
+        targetUid,
+        targetName: targetPlayer.name,
+        isMafia: result.isMafia,
+        investigationsRemaining: players[detectiveIndex].detectiveChecksRemaining ?? null,
+      },
+    };
+    const newEventRef = doc(eventsRef);
+    transaction.set(newEventRef, investigationEvent);
   });
 
   await resolveNight(gameId);
@@ -1135,6 +1159,12 @@ export const eliminateDayCandidate = async (gameId: string, targetUid: string) =
 
   // Check win conditions
   await checkWinCondition(gameId);
+  
+  // Auto-advance to night phase if game is still in progress
+  const updatedGame = (await getDoc(gameRef)).data() as MafiaGame;
+  if (updatedGame.status === "in-progress" && updatedGame.phase === "day") {
+    await advancePhase(gameId, "night");
+  }
 };
 
 export const checkWinCondition = async (gameId: string) => {

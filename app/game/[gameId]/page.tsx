@@ -394,13 +394,12 @@ export default function GameRoomPage() {
               {/* Action Center */}
               <ActionCenter 
                 game={game} 
-                viewerId={viewerId} 
-                onVote={handleVote} 
-                onClearVote={handleClearVote} 
-                onReadyToggle={handleReadyToggle} 
-              />
-              
-              {/* Chat Panel */}
+                viewerId={viewerId}
+                messages={messages}
+                onVote={handleVote}
+                onClearVote={handleClearVote}
+                onReadyToggle={handleReadyToggle}
+              />              {/* Chat Panel */}
               <div className="h-[400px]">
                 <ChatPanel
                   messages={messages}
@@ -772,7 +771,7 @@ export default function GameRoomPage() {
 
           {/* Center Column: Action Center + Activity Timeline */}
           <div className="space-y-6">
-            <ActionCenter game={game} viewerId={viewerId} onVote={handleVote} onClearVote={handleClearVote} onReadyToggle={handleReadyToggle} />
+            <ActionCenter game={game} viewerId={viewerId} messages={messages} onVote={handleVote} onClearVote={handleClearVote} onReadyToggle={handleReadyToggle} />
             <ActivityTimeline gameId={game.id} />
           </div>
 

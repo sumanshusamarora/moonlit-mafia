@@ -5,6 +5,8 @@ import type { MafiaGame } from "@/types/game";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { submitDetectiveInvestigation } from "@/lib/game/service";
+import { useGameEvents } from "@/hooks/use-game-events";
+import type { DetectiveInvestigationEventData } from "@/types/events";
 import { toast } from "sonner";
 
 interface DetectiveActionPromptProps {
@@ -25,6 +27,16 @@ export function DetectiveActionPrompt({
   const nightState = game.nightState;
   const detectiveResult = nightState?.detectiveResult ?? null;
   const alivePlayers = game.players.filter((player) => player.isAlive && player.uid !== viewerId);
+
+  // Get investigation history from events
+  const { events } = useGameEvents(game.id);
+  const investigationHistory = events.filter(
+    (event) => {
+      if (event.type !== "detective-investigation") return false;
+      const data = event.data as unknown as DetectiveInvestigationEventData;
+      return data.detectiveUid === viewerId;
+    }
+  );
 
   const handleDetectiveInvestigate = async (targetUid: string) => {
     setPendingTarget(targetUid);
@@ -68,6 +80,27 @@ export function DetectiveActionPrompt({
           Learn whether they are aligned with the mafia.
         </p>
       </div>
+
+      {/* Investigation History */}
+      {investigationHistory.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Previous Investigations:</p>
+          <div className="space-y-1.5">
+            {investigationHistory.map((event) => {
+              const eventData = event.data as unknown as DetectiveInvestigationEventData;
+              return (
+                <div key={event.id} className="rounded-md border bg-muted/50 px-3 py-2 text-xs">
+                  <span className="font-medium">{eventData.targetName}</span>:{" "}
+                  <span className={eventData.isMafia ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}>
+                    {eventData.isMafia ? "Mafia" : "Not Mafia"}
+                  </span>
+                  <span className="text-muted-foreground ml-2">(Round {event.round})</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {detectiveResult ? (
         <div className="rounded-md border border-primary/40 bg-primary/10 p-3">

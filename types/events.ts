@@ -5,6 +5,7 @@ export type GameEventType =
   | "vote-cast"
   | "vote-changed"
   | "detective-revealed"
+  | "detective-investigation"
   | "phase-changed"
   | "game-ended"
   | "player-joined"
@@ -54,6 +55,15 @@ export interface VoteChangedEventData {
 export interface DetectiveRevealedEventData {
   detectiveUid: string;
   detectiveName: string;
+  investigationsRemaining: number | null;
+}
+
+export interface DetectiveInvestigationEventData {
+  detectiveUid: string;
+  detectiveName: string;
+  targetUid: string;
+  targetName: string;
+  isMafia: boolean;
   investigationsRemaining: number | null;
 }
 

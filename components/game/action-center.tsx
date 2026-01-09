@@ -1,6 +1,6 @@
 "use client";
 
-import type { MafiaGame } from "@/types/game";
+import type { MafiaGame, GameMessage } from "@/types/game";
 import { PhaseIndicator } from "./phase-indicator";
 import { RoleReminder } from "./role-reminder";
 import { TimerDisplay } from "./timer-display";
@@ -15,12 +15,13 @@ import { skipDetectiveInvestigation } from "@/lib/game/service";
 interface ActionCenterProps {
   game: MafiaGame;
   viewerId: string;
+  messages?: GameMessage[];
   onVote: (targetUid: string) => Promise<void>;
   onClearVote: () => Promise<void>;
   onReadyToggle?: () => Promise<void>;
 }
 
-export function ActionCenter({ game, viewerId, onVote, onClearVote, onReadyToggle }: ActionCenterProps) {
+export function ActionCenter({ game, viewerId, messages, onVote, onClearVote, onReadyToggle }: ActionCenterProps) {
   const viewer = game.players.find((player) => player.uid === viewerId);
   if (!viewer) return null;
 
@@ -28,6 +29,11 @@ export function ActionCenter({ game, viewerId, onVote, onClearVote, onReadyToggl
   const viewerAlive = viewer.isAlive;
   const nightState = game.nightState;
   const stage = nightState?.stage ?? "idle";
+
+  // Get the latest narrator message
+  const latestNarratorMessage = messages
+    ?.filter((msg) => msg.authorUid === "system" && msg.authorName === "Narrator")
+    .sort((a, b) => b.createdAt - a.createdAt)[0];
 
   const handleSkipDetectiveCheck = async () => {
     try {
@@ -202,6 +208,22 @@ export function ActionCenter({ game, viewerId, onVote, onClearVote, onReadyToggl
           isAlive={viewerAlive}
           isRevealed={viewer.detectiveRevealed}
         />
+        
+        {/* Latest Narrator Event */}
+        {latestNarratorMessage && game.phase !== "lobby" && (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardContent className="p-3">
+              <div className="flex items-start gap-2">
+                <span className="text-lg">📖</span>
+                <div className="flex-1">
+                  <p className="text-xs font-medium text-primary">Latest Story Event</p>
+                  <p className="mt-1 text-sm text-foreground">{latestNarratorMessage.body}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        
         {renderActionPrompt()}
         {game.phase === "day" && (
           <VotingPanel

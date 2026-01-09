@@ -116,6 +116,7 @@ async function generateAICommentary(
   const apiKey = process.env.OPENAI_API_KEY;
   
   if (!apiKey) {
+    console.log("OpenAI API key not found, using template fallback");
     // Fallback to templates
     return getTemplateCommentary(type, params);
   }
@@ -125,6 +126,8 @@ async function generateAICommentary(
       ? createNightPrompt(params as NightCommentaryParams)
       : createDayPrompt(params as DayCommentaryParams);
 
+    console.log("Calling OpenAI API for commentary generation...");
+    
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -149,13 +152,23 @@ async function generateAICommentary(
     });
 
     if (!response.ok) {
-      throw new Error("OpenAI API request failed");
+      const errorText = await response.text();
+      console.error("OpenAI API request failed:", response.status, errorText);
+      throw new Error(`OpenAI API request failed: ${response.status}`);
     }
 
     const data = await response.json();
-    return data.choices[0]?.message?.content || getTemplateCommentary(type, params);
+    const commentary = data.choices[0]?.message?.content;
+    
+    if (commentary) {
+      console.log("✅ OpenAI commentary generated successfully");
+      return commentary;
+    }
+    
+    console.warn("OpenAI response missing content, using template fallback");
+    return getTemplateCommentary(type, params);
   } catch (error) {
-    console.error("AI commentary generation failed:", error);
+    console.error("❌ AI commentary generation failed, using template fallback:", error);
     return getTemplateCommentary(type, params);
   }
 }
