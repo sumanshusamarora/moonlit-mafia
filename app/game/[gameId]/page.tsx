@@ -7,18 +7,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PlayerList } from "@/components/game/player-list";
-import { VotingPanel } from "@/components/game/voting-panel";
-import { PhaseStatusCard } from "@/components/game/phase-status-card";
 import { ChatPanel } from "@/components/chat/chat-panel";
-import { VoiceRecorder } from "@/components/voice/voice-recorder";
-import { VoiceMemoList } from "@/components/voice/voice-memo-list";
+import { ActionCenter } from "@/components/game/action-center";
+import { ActivityTimeline } from "@/components/game/activity-timeline";
 import { useGameRoom } from "@/hooks/use-game-room";
 import { useAuth } from "@/components/providers/auth-provider";
 import {
   advancePhase,
   archiveGame,
   clearVote,
-  deleteVoiceMemo,
+  eliminateDayCandidate,
+  peekAtRoles,
+  restartLobby,
   postMessage,
   recordSystemMessage,
   startGame,
@@ -33,7 +33,7 @@ import { Loader2Icon, MoonIcon, SunIcon } from "lucide-react";
 export default function GameRoomPage() {
   const params = useParams<{ gameId: string }>();
   const gameId = params?.gameId;
-  const { game, messages, voiceMemos, loading } = useGameRoom(gameId ?? null);
+  const { game, messages, loading } = useGameRoom(gameId ?? null);
   const { user } = useAuth();
   const [isBusy, setIsBusy] = useState(false);
   const [timerBusy, setTimerBusy] = useState(false);
@@ -78,6 +78,26 @@ export default function GameRoomPage() {
       await recordSystemMessage(game.id, "The game has begun. Mafia, make your move.", "night");
     } catch (error) {
       toast.error((error as Error).message ?? "Unable to start the game");
+      console.error(error);
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handlePeekRoles = async () => {
+    if (!game || !viewer) return;
+    const confirmed = window.confirm(
+      "Peeking at hidden roles will eliminate you immediately. Do you want to continue?"
+    );
+    if (!confirmed) {
+      return;
+    }
+    setIsBusy(true);
+    try {
+      await peekAtRoles(game.id, viewer.uid);
+      toast.info("You peeked at the roles and are now out of the game.");
+    } catch (error) {
+      toast.error((error as Error).message ?? "Unable to peek at roles");
       console.error(error);
     } finally {
       setIsBusy(false);
@@ -187,17 +207,6 @@ export default function GameRoomPage() {
     }
   };
 
-  const handleDeleteMemo = async (memoId: string, storagePath: string) => {
-    if (!game) return;
-    try {
-      await deleteVoiceMemo(game.id, memoId, storagePath);
-      toast.success("Voice memo removed");
-    } catch (error) {
-      toast.error("Unable to delete memo");
-      console.error(error);
-    }
-  };
-
   const handleAdvancePhase = async () => {
     if (!game) return;
     const nextPhase = game.phase === "day" ? "night" : game.phase === "night" ? "day" : "day";
@@ -205,8 +214,47 @@ export default function GameRoomPage() {
       await advancePhase(game.id, nextPhase);
       await recordSystemMessage(game.id, `Phase advanced to ${nextPhase}.`, nextPhase);
     } catch (error) {
-      toast.error("Unable to advance phase");
+      toast.error((error as Error).message ?? "Unable to advance phase");
       console.error(error);
+    }
+  };
+
+  const handleEliminate = async (targetUid: string) => {
+    if (!game) return;
+    const target = game.players.find((p) => p.uid === targetUid);
+    if (!target) return;
+
+    const confirmed = window.confirm(
+      `Are you sure you want to eliminate ${target.name}? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setIsBusy(true);
+    try {
+      await eliminateDayCandidate(game.id, targetUid);
+      
+      // Determine if village is safer based on role
+      const isMafia = target.role === "mafia";
+      const safetyMessage = isMafia 
+        ? "🟢 The village is safer now. A mafia member has been eliminated!"
+        : "🔴 The village is in more danger. An innocent was eliminated.";
+      
+      await recordSystemMessage(
+        game.id, 
+        `${target.name} (${target.role}) was eliminated by vote. ${safetyMessage}`, 
+        "day"
+      );
+      
+      if (isMafia) {
+        toast.success("Mafia eliminated!");
+      } else {
+        toast.error("Innocent eliminated!");
+      }
+    } catch (error) {
+      toast.error((error as Error).message ?? "Unable to eliminate player");
+      console.error(error);
+    } finally {
+      setIsBusy(false);
     }
   };
 
@@ -218,6 +266,26 @@ export default function GameRoomPage() {
     } catch (error) {
       toast.error("Unable to archive game");
       console.error(error);
+    }
+  };
+
+  const handleRestartLobby = async () => {
+    if (!game || !viewer) return;
+    const confirmed = window.confirm(
+      "Restarting will reset player readiness, clear roles, and return to the lobby. Continue?"
+    );
+    if (!confirmed) {
+      return;
+    }
+    setIsBusy(true);
+    try {
+      await restartLobby(game.id, viewer.uid);
+      toast.success("Lobby reset. Roles will be re-assigned when the game starts.");
+    } catch (error) {
+      toast.error((error as Error).message ?? "Unable to restart lobby");
+      console.error(error);
+    } finally {
+      setIsBusy(false);
     }
   };
 
@@ -256,8 +324,9 @@ export default function GameRoomPage() {
   }
 
   const everyoneReady = game.players.every((player) => player.ready);
-  const voiceDisabled = !game.config.enableVoice;
   const timerControlsEnabled = isHost && (game.phase === "day" || game.phase === "night");
+  const viewerIsDead = viewer ? !viewer.isAlive : false;
+  const viewerRole = viewer?.role ?? null;
 
   return (
     <AppShell
@@ -273,38 +342,40 @@ export default function GameRoomPage() {
       }
     >
       <div className="space-y-6">
-        <section className="grid gap-6 lg:grid-cols-[2fr,1.5fr]">
-          <div className="space-y-6">
-            <PhaseStatusCard
-              game={game}
-              isHost={isHost}
-              onExtendTimer={timerControlsEnabled ? handleExtendTimer : undefined}
-              onResetTimer={timerControlsEnabled ? handleResetTimer : undefined}
-              isTimerBusy={timerBusy}
-            />
+        {/* New Layout: 3-column grid on desktop */}
+        <section className="grid gap-6 lg:grid-cols-[300px,1fr] xl:grid-cols-[300px,1fr,380px]">
+          
+          {/* Left Column: Players + Host Controls (Sticky) */}
+          <aside className="space-y-6">
             <Card>
-              <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <CardTitle className="text-2xl font-semibold">Players</CardTitle>
-                  <p className="text-sm text-muted-foreground">
-                    {game.players.length}/{game.config.maxPlayers} in lobby • Phase: {game.phase}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
+              <CardHeader>
+                <CardTitle className="text-sm font-semibold">Players</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  {game.players.filter((p) => p.isAlive).length} alive • {game.players.length} total
+                </p>
+              </CardHeader>
+              <CardContent>
+                <PlayerList
+                  players={game.players}
+                  viewerId={viewerId}
+                  viewerIsDead={viewerIsDead || game.phase === "ended"}
+                  viewerRole={viewerRole}
+                  revealDeadRoles={game.config.revealRolesOnDeath || game.phase === "ended"}
+                />
+              </CardContent>
+            </Card>
+            
+            {/* Host Controls */}
+            {isHost && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm font-semibold">Host Controls</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
                   {game.phase === "lobby" && (
                     <Button
                       size="sm"
-                      variant="outline"
-                      onClick={handleReadyToggle}
-                      data-testid="ready-toggle"
-                      data-ready-state={viewer?.ready ? "ready" : "not-ready"}
-                    >
-                      {viewer?.ready ? "Unready" : "Ready up"}
-                    </Button>
-                  )}
-                  {isHost && game.phase === "lobby" && (
-                    <Button
-                      size="sm"
+                      className="w-full"
                       onClick={handleStart}
                       disabled={!everyoneReady || isBusy}
                       data-testid="start-game-button"
@@ -312,11 +383,43 @@ export default function GameRoomPage() {
                       {isBusy ? "Starting..." : "Start game"}
                     </Button>
                   )}
-                  {isHost && game.phase !== "ended" && game.phase !== "lobby" && (
+                  
+                  {/* Day Elimination Control */}
+                  {game.phase === "day" && 
+                   game.dayEliminationState?.votingComplete && 
+                   !game.dayEliminationState.eliminated &&
+                   game.dayEliminationState.leadingCandidateUid && (
+                    <div className="space-y-2 rounded-lg border border-destructive/50 bg-destructive/5 p-3">
+                      <p className="text-xs font-medium text-destructive">
+                        Elimination Required
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {game.dayEliminationState.leadingCandidateName} has {game.dayEliminationState.leadingVoteCount} votes
+                      </p>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="w-full"
+                        onClick={() => handleEliminate(game.dayEliminationState!.leadingCandidateUid!)}
+                        disabled={isBusy}
+                      >
+                        Eliminate {game.dayEliminationState.leadingCandidateName}
+                      </Button>
+                    </div>
+                  )}
+                  
+                  {game.phase !== "ended" && game.phase !== "lobby" && (
                     <Button
                       size="sm"
                       variant="outline"
+                      className="w-full"
                       onClick={handleAdvancePhase}
+                      disabled={
+                        (game.phase === "day" && 
+                         game.dayEliminationState?.votingComplete && 
+                         !game.dayEliminationState.eliminated) || 
+                        isBusy
+                      }
                       data-testid="advance-phase-button"
                     >
                       {game.phase === "day" ? (
@@ -332,42 +435,107 @@ export default function GameRoomPage() {
                       )}
                     </Button>
                   )}
-                  {isHost && game.phase !== "ended" && (
-                    <Button size="sm" variant="ghost" onClick={handleArchive}>
+                  {timerControlsEnabled && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => handleExtendTimer(30000)}
+                        disabled={timerBusy}
+                      >
+                        Extend +30s
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="w-full"
+                        onClick={handleResetTimer}
+                        disabled={timerBusy}
+                      >
+                        Reset Timer
+                      </Button>
+                    </>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleRestartLobby}
+                    disabled={isBusy}
+                    data-testid="restart-lobby-button"
+                  >
+                    Restart lobby
+                  </Button>
+                  {viewer?.isAlive && !game.hostPeeked && game.phase !== "lobby" && game.phase !== "ended" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full border-destructive/50 text-destructive hover:border-destructive hover:bg-destructive/10"
+                      onClick={handlePeekRoles}
+                      disabled={isBusy}
+                      data-testid="peek-roles-button"
+                    >
+                      Peek at roles
+                    </Button>
+                  )}
+                  {game.phase === "ended" && (
+                    <div className="space-y-2 rounded-lg border border-primary/50 bg-primary/5 p-3">
+                      <p className="text-sm font-semibold text-primary">
+                        🏆 Game Ended
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {game.lastAction || "The game has concluded."}
+                      </p>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="w-full" 
+                        onClick={handleArchive}
+                      >
+                        Archive Game
+                      </Button>
+                    </div>
+                  )}
+                  {game.phase !== "ended" && (
+                    <Button size="sm" variant="outline" className="w-full" onClick={handleArchive}>
                       Archive
                     </Button>
                   )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <PlayerList
-                  players={game.players}
-                  viewerId={viewerId}
-                  revealRoles={game.config.revealRolesOnDeath || game.phase === "ended"}
-                />
-              </CardContent>
-            </Card>
-
-            <VotingPanel
-              game={game}
-              viewerId={viewerId}
-              onVote={handleVote}
-              onClear={handleClearVote}
-              disabled={!viewer || !viewer.isAlive || game.phase !== "day"}
-            />
-          </div>
-
-          <div className="space-y-6">
-            <ChatPanel messages={messages} onSend={handleSendMessage} phase={game.phase} disabled={!viewer} />
-            {!voiceDisabled && (
-              <VoiceRecorder onUpload={handleUploadVoice} disabled={!viewer || !viewer.isAlive} />
+                </CardContent>
+              </Card>
             )}
-            <VoiceMemoList
-              memos={voiceMemos}
-              canModerate={isHost}
-              onDelete={handleDeleteMemo}
-            />
+          </aside>
+
+          {/* Center Column: Action Center + Activity Timeline */}
+          <div className="space-y-6">
+            <ActionCenter game={game} viewerId={viewerId} onVote={handleVote} onClearVote={handleClearVote} onReadyToggle={handleReadyToggle} />
+            <ActivityTimeline gameId={game.id} />
           </div>
+
+          {/* Right Column: Chat with Voice (Desktop only, hidden on mobile/tablet) */}
+          <aside className="hidden space-y-6 xl:block">
+            <ChatPanel 
+              messages={messages} 
+              onSend={handleSendMessage} 
+              onSendVoice={handleUploadVoice}
+              phase={game.phase} 
+              disabled={!viewer}
+              voiceEnabled={game.config.enableVoice && viewer?.isAlive}
+            />
+          </aside>
+        </section>
+
+        {/* Bottom Section: Chat/Voice on mobile */}
+        <section className="space-y-6 xl:hidden">
+          <ChatPanel 
+            messages={messages} 
+            onSend={handleSendMessage}
+            onSendVoice={handleUploadVoice} 
+            phase={game.phase} 
+            disabled={!viewer}
+            voiceEnabled={game.config.enableVoice && viewer?.isAlive}
+          />
         </section>
       </div>
     </AppShell>

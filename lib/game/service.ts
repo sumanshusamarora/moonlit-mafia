@@ -9,6 +9,7 @@ import {
   getDoc,
   getDocs,
   limit,
+  runTransaction,
   onSnapshot,
   orderBy,
   query,
@@ -25,13 +26,21 @@ import {
   type UploadResult,
 } from "firebase/storage";
 import { ensureAnonymousAuth, getFirebaseFirestore, getFirebaseStorage } from "@/lib/firebase/client";
-import { generateGameCode, recommendedRoles } from "./utils";
+import { ROLE_DEFINITIONS } from "./roles";
+import { generateGameCode } from "./utils";
+import { recordGameEvent } from "./events";
+import { generateNightCommentary, generateDayCommentary } from "@/lib/ai/commentary";
 import type {
   CreateGamePayload,
+  DetectiveResult,
   GameMessage,
+  GameRole,
   GameVoiceMemo,
   JoinGamePayload,
   MafiaGame,
+  NightStage,
+  NightState,
+  NightVote,
   VoteState,
 } from "@/types/game";
 import { joinGameSchema, createGameSchema } from "./schemas";
@@ -43,6 +52,78 @@ const VOICE_SUBCOLLECTION = "voiceMemos";
 
 const db = getFirebaseFirestore();
 const storage = getFirebaseStorage();
+
+const createInitialNightState = (stage: NightStage = "idle"): NightState => {
+  const now = Date.now();
+  return {
+    stage,
+    mafiaVotes: [],
+    lockedTargetUid: null,
+    doctorTargetUid: null,
+    detectiveTargetUid: null,
+    detectiveResult: null,
+    lastTransitionAt: now,
+  };
+};
+
+const getAliveRoleUids = (game: MafiaGame, role: GameRole) =>
+  game.players.filter((player) => player.role === role && player.isAlive).map((player) => player.uid);
+
+const shuffleArray = <T,>(items: T[]): T[] => {
+  const result = [...items];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+};
+
+const determineConsensusTarget = (aliveMafia: string[], votes: NightVote[]): string | null => {
+  if (!aliveMafia.length) {
+    return null;
+  }
+
+  const firstVote = votes.find((vote) => aliveMafia.includes(vote.voterUid));
+  if (!firstVote) {
+    return null;
+  }
+
+  const target = firstVote.targetUid;
+  const everyoneAgrees = aliveMafia.every((uid) => {
+    const vote = votes.find((entry) => entry.voterUid === uid);
+    return vote?.targetUid === target;
+  });
+
+  return everyoneAgrees ? target : null;
+};
+
+const determineNextNightStage = (game: MafiaGame, currentStage: NightStage): NightStage => {
+  const hasDoctor = getAliveRoleUids(game, "doctor").length > 0;
+  const hasDetective = getAliveRoleUids(game, "detective").length > 0;
+
+  if (currentStage === "mafia") {
+    if (hasDoctor) {
+      return "doctor";
+    }
+    if (hasDetective) {
+      return "detective";
+    }
+    return "resolution";
+  }
+
+  if (currentStage === "doctor") {
+    if (hasDetective) {
+      return "detective";
+    }
+    return "resolution";
+  }
+
+  if (currentStage === "detective") {
+    return "resolution";
+  }
+
+  return "idle";
+};
 
 export const createGame = async (payload: CreateGamePayload) => {
   const parsed = createGameSchema.parse(payload);
@@ -79,6 +160,8 @@ export const createGame = async (payload: CreateGamePayload) => {
       },
     ],
     playerIds: [user.uid],
+    hostPeeked: false,
+    nightState: createInitialNightState(),
   };
 
   await setDoc(gameRef, game);
@@ -220,36 +303,127 @@ export const startGame = async (gameId: string) => {
   }
 
   const playerCount = readyPlayers.length;
-  const configuredRoles = game.config.roles.map((role) => ({ ...role }));
-  const assignedTotal = configuredRoles.reduce((sum, role) => sum + role.count, 0);
-  if (assignedTotal < playerCount) {
-    const villager = configuredRoles.find((role) => role.role === "villager");
-    if (villager) {
-      villager.count += playerCount - assignedTotal;
-    } else {
-      configuredRoles.push({ role: "villager", count: playerCount - assignedTotal });
+  
+  // Calculate total configured roles
+  const configuredTotal = game.config.roles.reduce((sum, entry) => sum + entry.count, 0);
+  
+  // Use defaults if player count doesn't match configured total
+  const useDefaults = configuredTotal !== playerCount;
+  
+  const configuredMap = new Map<GameRole, number>();
+  if (!useDefaults) {
+    for (const entry of game.config.roles) {
+      configuredMap.set(entry.role, Math.max(0, Math.floor(entry.count)));
     }
   }
 
-  const rolePool = configuredRoles.flatMap((role) =>
-    Array.from({ length: role.count }).map(() => role.role)
-  );
-
-  if (rolePool.length < playerCount) {
-    const fallback = recommendedRoles(playerCount);
-    rolePool.push(
-      ...fallback.flatMap((role) => Array.from({ length: role.count }).map(() => role.role))
-    );
+  const recommendedMap = new Map<GameRole, number>();
+  for (const definition of ROLE_DEFINITIONS) {
+    recommendedMap.set(definition.id, Math.max(0, Math.floor(definition.recommendedCount(playerCount))));
   }
 
-  const shuffled = [...rolePool].sort(() => Math.random() - 0.5);
+  const getDesiredCount = (role: GameRole) => {
+    // If using defaults or role not configured, use recommended
+    if (useDefaults) {
+      return recommendedMap.get(role) ?? 0;
+    }
+    const configured = configuredMap.get(role);
+    if (configured === undefined) {
+      return recommendedMap.get(role) ?? 0;
+    }
+    return configured;
+  };
 
-  const players = game.players.map((player) => {
+  const minimumVillagers = Math.min(2, Math.max(playerCount - 1, 0));
+  let villagerCount = minimumVillagers;
+  let remainingSlots = playerCount - villagerCount;
+
+  if (remainingSlots <= 0) {
+    throw new Error("Minimum 2 villagers required to start.");
+  }
+
+  const assignments = new Map<GameRole, number>();
+
+  const mafiaDesired = Math.max(1, getDesiredCount("mafia"));
+  const mafiaCount = Math.max(1, Math.min(mafiaDesired, Math.max(remainingSlots, 1)));
+  assignments.set("mafia", mafiaCount);
+  remainingSlots -= mafiaCount;
+
+  for (const definition of ROLE_DEFINITIONS) {
+    if (definition.id === "mafia" || definition.id === "villager") {
+      continue;
+    }
+    if (remainingSlots <= 0) {
+      assignments.set(definition.id, 0);
+      continue;
+    }
+    const desired = getDesiredCount(definition.id);
+    const count = Math.min(desired, remainingSlots);
+    assignments.set(definition.id, count);
+    remainingSlots -= count;
+  }
+
+  villagerCount += remainingSlots;
+
+  if (villagerCount < 2) {
+    throw new Error("Minimum 2 villagers required to start.");
+  }
+
+  assignments.set("villager", villagerCount);
+
+  const rolePool: GameRole[] = [];
+  for (const definition of ROLE_DEFINITIONS) {
+    const count = assignments.get(definition.id) ?? 0;
+    for (let index = 0; index < count; index += 1) {
+      rolePool.push(definition.id);
+    }
+  }
+
+  if (rolePool.length !== playerCount) {
+    throw new Error("Failed to allocate roles for the ready players.");
+  }
+
+  const shuffledRoles = shuffleArray(rolePool);
+
+  const assignedPlayers = game.players.map((player) => {
+    const {
+      detectiveChecksRemaining: _detectiveChecksRemaining,
+      detectiveRevealed: _detectiveRevealed,
+      ...rest
+    } = player;
+    void _detectiveChecksRemaining;
+    void _detectiveRevealed;
     if (!player.ready) {
-      return player;
+      return { ...rest, role: null, isAlive: true };
     }
-    const role = shuffled.pop() ?? "villager";
-    return { ...player, role, isAlive: true };
+    const role = shuffledRoles.pop() ?? "villager";
+    return { ...rest, role, isAlive: true };
+  });
+
+  const mafiaAssigned = assignedPlayers.filter((player) => player.role === "mafia" && player.isAlive).length;
+  const oncePerRound = game.config.detectiveOncePerRound ?? false;
+  let configuredLimit = oncePerRound ? null : game.config.detectiveChecksLimit;
+  if (!oncePerRound && (configuredLimit === null || configuredLimit === undefined)) {
+    configuredLimit = mafiaAssigned;
+  }
+  const normalizedLimit = configuredLimit ?? 0;
+
+  const players = assignedPlayers.map((player) => {
+    if (player.role === "detective") {
+      return {
+        ...player,
+        detectiveChecksRemaining: oncePerRound ? null : Math.max(0, normalizedLimit),
+        detectiveRevealed: false,
+      };
+    }
+    const {
+      detectiveChecksRemaining: _detectiveChecksRemaining,
+      detectiveRevealed: _detectiveRevealed,
+      ...rest
+    } = player;
+    void _detectiveChecksRemaining;
+    void _detectiveRevealed;
+    return rest;
   });
 
   await updateDoc(gameRef, {
@@ -259,7 +433,562 @@ export const startGame = async (gameId: string) => {
     round: 1,
     status: "in-progress",
     lastAction: "Game started",
+    nightState: createInitialNightState("mafia"),
   });
+
+  // Record game start event
+  const roleDistribution: Record<string, number> = {};
+  players.forEach((player) => {
+    if (player.role) {
+      roleDistribution[player.role] = (roleDistribution[player.role] ?? 0) + 1;
+    }
+  });
+
+  await recordGameEvent(gameId, "game-started", "night", 1, {
+    playerCount: readyPlayers.length,
+    roleDistribution,
+  }, "Game has started");
+
+  await recordGameEvent(gameId, "phase-changed", "night", 1, {
+    previousPhase: "lobby",
+    newPhase: "night",
+    round: 1,
+  });
+};
+
+export const peekAtRoles = async (gameId: string, hostUid: string) => {
+  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  let recordedPhase: MafiaGame["phase"] = "lobby";
+  let hostName = "Host";
+  let updated = false;
+
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(gameRef);
+    if (!snapshot.exists()) {
+      throw new Error("Game not found");
+    }
+
+    const game = snapshot.data() as MafiaGame;
+    recordedPhase = game.phase;
+
+    if (game.hostId !== hostUid) {
+      throw new Error("Only the host can peek at roles.");
+    }
+
+    if (game.hostPeeked) {
+      throw new Error("Roles have already been revealed to the host.");
+    }
+
+    const players = [...game.players];
+    const hostIndex = players.findIndex((player) => player.uid === hostUid);
+    if (hostIndex === -1) {
+      throw new Error("Host is not part of this lobby.");
+    }
+
+    const hostPlayer = players[hostIndex];
+    hostName = hostPlayer.name;
+
+    if (!hostPlayer.isAlive) {
+      throw new Error("Host is already eliminated.");
+    }
+
+    players[hostIndex] = { ...hostPlayer, isAlive: false };
+
+    transaction.update(gameRef, {
+      players,
+      hostPeeked: true,
+      lastAction: "Host peeked at hidden roles",
+    });
+
+    updated = true;
+  });
+
+  if (updated) {
+    await recordSystemMessage(
+      gameId,
+      `${hostName} peeked at the hidden roles and has been removed from play.`,
+      recordedPhase
+    );
+  }
+};
+
+export const restartLobby = async (gameId: string, hostUid: string) => {
+  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  let hostName = "Host";
+
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(gameRef);
+    if (!snapshot.exists()) {
+      throw new Error("Game not found");
+    }
+
+    const game = snapshot.data() as MafiaGame;
+
+    if (game.hostId !== hostUid) {
+      throw new Error("Only the host can restart the lobby.");
+    }
+
+    const players = game.players.map((player) => {
+      if (player.uid === hostUid) {
+        hostName = player.name;
+      }
+      const {
+        detectiveChecksRemaining: _detectiveChecksRemaining,
+        detectiveRevealed: _detectiveRevealed,
+        ...rest
+      } = player;
+      void _detectiveChecksRemaining;
+      void _detectiveRevealed;
+      return {
+        ...rest,
+        role: null,
+        isAlive: true,
+        ready: false,
+      };
+    });
+
+    transaction.update(gameRef, {
+      players,
+      phase: "lobby",
+      status: "waiting",
+      round: 0,
+      phaseEndsAt: null,
+      lastAction: "Lobby restarted",
+      nightState: createInitialNightState(),
+      votes: [],
+      hostPeeked: false,
+    });
+  });
+
+  // Clear messages and events on restart
+  const messagesRef = collection(db, GAMES_COLLECTION, gameId, MESSAGES_SUBCOLLECTION);
+  const messagesSnapshot = await getDocs(messagesRef);
+  const deleteMessagePromises = messagesSnapshot.docs.map((msgDoc) => deleteDoc(msgDoc.ref));
+  await Promise.all(deleteMessagePromises);
+
+  const eventsRef = collection(db, GAMES_COLLECTION, gameId, "events");
+  const eventsSnapshot = await getDocs(eventsRef);
+  const deleteEventPromises = eventsSnapshot.docs.map((eventDoc) => deleteDoc(eventDoc.ref));
+  await Promise.all(deleteEventPromises);
+
+  await recordSystemMessage(
+    gameId,
+    `${hostName} reset the lobby. Ready up for another round!`,
+    "lobby"
+  );
+};
+
+export const submitMafiaVote = async (gameId: string, voterUid: string, targetUid: string) => {
+  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  let shouldResolve = false;
+
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(gameRef);
+    if (!snapshot.exists()) {
+      throw new Error("Game not found");
+    }
+
+    const game = snapshot.data() as MafiaGame;
+    if (game.phase !== "night") {
+      throw new Error("Mafia can only act during the night.");
+    }
+
+    const nightState = game.nightState ?? createInitialNightState("mafia");
+    if (nightState.stage !== "mafia") {
+      throw new Error("Mafia actions are not active right now.");
+    }
+
+    const aliveMafia = getAliveRoleUids(game, "mafia");
+    if (!aliveMafia.includes(voterUid)) {
+      throw new Error("Only alive mafia members can vote.");
+    }
+
+    const targetPlayer = game.players.find((player) => player.uid === targetUid && player.isAlive);
+    if (!targetPlayer) {
+      throw new Error("Invalid target for elimination.");
+    }
+
+    const now = Date.now();
+    const votes: NightVote[] = nightState.mafiaVotes
+      .filter((vote) => aliveMafia.includes(vote.voterUid))
+      .filter((vote) => vote.voterUid !== voterUid);
+
+    votes.push({ voterUid, targetUid, submittedAt: now });
+
+    const consensusUid = determineConsensusTarget(aliveMafia, votes);
+    const lockedPlayer = consensusUid
+      ? game.players.find((player) => player.uid === consensusUid) ?? null
+      : null;
+
+    const nextStage = consensusUid ? determineNextNightStage(game, "mafia") : nightState.stage;
+    const updatedState: NightState = {
+      ...nightState,
+      mafiaVotes: votes,
+      lockedTargetUid: consensusUid ?? nightState.lockedTargetUid ?? null,
+      stage: nextStage,
+      lastTransitionAt: nextStage !== nightState.stage ? now : nightState.lastTransitionAt,
+    };
+
+    const lastAction = lockedPlayer
+      ? `Mafia locked target ${lockedPlayer.name}`
+      : `Mafia updated their votes`;
+
+    transaction.update(gameRef, {
+      nightState: updatedState,
+      lastAction,
+    });
+
+    shouldResolve = nextStage === "resolution";
+  });
+
+  if (shouldResolve) {
+    await resolveNight(gameId);
+  }
+};
+
+export const submitDoctorSave = async (gameId: string, doctorUid: string, targetUid: string) => {
+  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  let shouldResolve = false;
+
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(gameRef);
+    if (!snapshot.exists()) {
+      throw new Error("Game not found");
+    }
+
+    const game = snapshot.data() as MafiaGame;
+    if (game.phase !== "night") {
+      throw new Error("Doctor can only act during the night.");
+    }
+
+    const nightState = game.nightState ?? createInitialNightState("mafia");
+    if (nightState.stage !== "doctor") {
+      throw new Error("Doctor actions are not active right now.");
+    }
+
+    const doctor = game.players.find((player) => player.uid === doctorUid);
+    if (!doctor || doctor.role !== "doctor" || !doctor.isAlive) {
+      throw new Error("Only an alive doctor can protect players.");
+    }
+
+    const targetPlayer = game.players.find((player) => player.uid === targetUid);
+    if (!targetPlayer || !targetPlayer.isAlive) {
+      throw new Error("Doctor must protect a living player.");
+    }
+
+    const now = Date.now();
+    const nextStage = determineNextNightStage(game, "doctor");
+    const updatedState: NightState = {
+      ...nightState,
+      doctorTargetUid: targetUid,
+      stage: nextStage,
+      lastTransitionAt: nextStage !== nightState.stage ? now : nightState.lastTransitionAt,
+    };
+
+    transaction.update(gameRef, {
+      nightState: updatedState,
+      lastAction: `Doctor prepared protection for ${targetPlayer.name}`,
+    });
+
+    shouldResolve = nextStage === "resolution";
+  });
+
+  if (shouldResolve) {
+    await resolveNight(gameId);
+  }
+};
+
+export const submitDetectiveInvestigation = async (
+  gameId: string,
+  detectiveUid: string,
+  targetUid: string
+) => {
+  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  let conversionMessage: string | null = null;
+  let conversionPhase: MafiaGame["phase"] = "night";
+
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(gameRef);
+    if (!snapshot.exists()) {
+      throw new Error("Game not found");
+    }
+
+    const game = snapshot.data() as MafiaGame;
+    if (game.phase !== "night") {
+      throw new Error("Detective can only investigate during the night.");
+    }
+
+    const nightState = game.nightState ?? createInitialNightState("mafia");
+    if (nightState.stage !== "detective") {
+      throw new Error("Detective actions are not active right now.");
+    }
+
+    const detective = game.players.find((player) => player.uid === detectiveUid);
+    if (!detective || detective.role !== "detective" || !detective.isAlive) {
+      throw new Error("Only an alive detective can investigate.");
+    }
+
+    if (!game.config.detectiveOncePerRound) {
+      const remaining = detective.detectiveChecksRemaining ?? game.config.detectiveChecksLimit ?? 0;
+      if (remaining <= 0) {
+        throw new Error("Detective has no investigations remaining.");
+      }
+    }
+
+    const targetPlayer = game.players.find((player) => player.uid === targetUid);
+    if (!targetPlayer) {
+      throw new Error("Detective must investigate an existing player.");
+    }
+
+    const now = Date.now();
+    const result: DetectiveResult = {
+      targetUid,
+      isMafia: targetPlayer.role === "mafia",
+      revealedAt: now,
+    };
+
+    const players = [...game.players];
+    const detectiveIndex = players.findIndex((player) => player.uid === detectiveUid);
+    if (detectiveIndex === -1) {
+      throw new Error("Detective not found in lobby.");
+    }
+
+    const detector = players[detectiveIndex];
+    const oncePerRound = game.config.detectiveOncePerRound ?? false;
+    const remainingCharges = detector.detectiveChecksRemaining;
+
+    if (!oncePerRound) {
+      const baseline = remainingCharges ?? game.config.detectiveChecksLimit ?? 0;
+      const nextRemaining = Math.max(0, baseline - 1);
+      if (nextRemaining <= 0) {
+        const {
+          detectiveChecksRemaining: _detectiveChecksRemaining,
+          detectiveRevealed: _detectiveRevealed,
+          ...rest
+        } = detector;
+        void _detectiveChecksRemaining;
+        void _detectiveRevealed;
+        players[detectiveIndex] = {
+          ...rest,
+          role: "villager",
+        };
+        conversionMessage = `${detector.name} has exhausted their investigations and now appears as a villager.`;
+        conversionPhase = game.phase;
+      } else {
+        players[detectiveIndex] = {
+          ...detector,
+          detectiveChecksRemaining: nextRemaining,
+        };
+      }
+    }
+
+    const updatedState: NightState = {
+      ...nightState,
+      detectiveTargetUid: targetUid,
+      detectiveResult: result,
+      stage: "resolution",
+      lastTransitionAt: now,
+    };
+
+    transaction.update(gameRef, {
+      players,
+      nightState: updatedState,
+      lastAction: `Detective completed an investigation`,
+    });
+  });
+
+  await resolveNight(gameId);
+
+  if (conversionMessage) {
+    await recordSystemMessage(gameId, conversionMessage, conversionPhase);
+  }
+};
+
+export const skipDetectiveInvestigation = async (gameId: string, detectiveUid: string) => {
+  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(gameRef);
+    if (!snapshot.exists()) {
+      throw new Error("Game not found");
+    }
+
+    const game = snapshot.data() as MafiaGame;
+    if (game.phase !== "night") {
+      throw new Error("Detective can only skip during the night.");
+    }
+
+    const nightState = game.nightState ?? createInitialNightState("mafia");
+    if (nightState.stage !== "detective") {
+      throw new Error("Detective actions are not active right now.");
+    }
+
+    const detective = game.players.find((player) => player.uid === detectiveUid);
+    if (!detective || detective.role !== "detective" || !detective.isAlive) {
+      throw new Error("Only an alive detective can skip investigation.");
+    }
+
+    const now = Date.now();
+    const updatedState: NightState = {
+      ...nightState,
+      detectiveTargetUid: null,
+      detectiveResult: null,
+      stage: "resolution",
+      lastTransitionAt: now,
+    };
+
+    transaction.update(gameRef, {
+      nightState: updatedState,
+      lastAction: "Detective skipped investigation",
+    });
+  });
+
+  await resolveNight(gameId);
+};
+
+export const revealDetective = async (gameId: string, detectiveUid: string) => {
+  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  let announcement: string | null = null;
+  let phase: MafiaGame["phase"] = "lobby";
+
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(gameRef);
+    if (!snapshot.exists()) {
+      throw new Error("Game not found");
+    }
+
+    const game = snapshot.data() as MafiaGame;
+    phase = game.phase;
+
+    const players = [...game.players];
+    const detectiveIndex = players.findIndex((player) => player.uid === detectiveUid);
+    if (detectiveIndex === -1) {
+      throw new Error("Detective not part of this lobby.");
+    }
+
+    const actor = players[detectiveIndex];
+    if (!actor.isAlive) {
+      throw new Error("Only living players can reveal their role.");
+    }
+    if (actor.role !== "detective") {
+      throw new Error("You are no longer the detective.");
+    }
+
+    const {
+      detectiveChecksRemaining: _detectiveChecksRemaining,
+      detectiveRevealed: _detectiveRevealed,
+      ...rest
+    } = actor;
+    void _detectiveChecksRemaining;
+    void _detectiveRevealed;
+
+    players[detectiveIndex] = {
+      ...rest,
+      role: "villager",
+      detectiveRevealed: true,
+      detectiveChecksRemaining: 0,
+    };
+
+    announcement = `${actor.name} revealed themselves as the detective and forfeited remaining investigations.`;
+
+    transaction.update(gameRef, {
+      players,
+      lastAction: `${actor.name} revealed their identity`,
+    });
+  });
+
+  if (announcement) {
+    await recordSystemMessage(gameId, announcement, phase);
+  }
+};
+
+export const resolveNight = async (gameId: string) => {
+  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  let message: string | null = null;
+  let eliminatedName: string | null = null;
+  let messagePhase: MafiaGame["phase"] = "day";
+
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(gameRef);
+    if (!snapshot.exists()) {
+      throw new Error("Game not found");
+    }
+
+    const game = snapshot.data() as MafiaGame;
+    const nightState = game.nightState;
+
+    if (!nightState || nightState.stage !== "resolution") {
+      throw new Error("Night actions are not ready to resolve.");
+    }
+
+    const now = Date.now();
+    const players = [...game.players];
+    const targetUid = nightState.lockedTargetUid;
+    const savedUid = nightState.doctorTargetUid;
+    const dayDurationMs = game.config.dayDurationMinutes * 60 * 1000;
+
+    if (targetUid && targetUid !== savedUid) {
+      const playerIndex = players.findIndex((player) => player.uid === targetUid);
+      if (playerIndex >= 0) {
+        const player = players[playerIndex];
+        if (player.isAlive) {
+          players[playerIndex] = { ...player, isAlive: false };
+          eliminatedName = player.name;
+        }
+      }
+    }
+
+    const nextState: NightState = {
+      ...createInitialNightState("idle"),
+      detectiveResult: nightState.detectiveResult,
+      lastTransitionAt: now,
+    };
+
+    const lastAction = eliminatedName
+      ? `Night eliminated ${eliminatedName}`
+      : savedUid && targetUid === savedUid
+      ? "Doctor prevented a night kill"
+      : "Night concluded without casualties";
+
+    transaction.update(gameRef, {
+      players,
+      nightState: nextState,
+      phase: "day",
+      phaseEndsAt: dayDurationMs ? now + dayDurationMs : null,
+      lastAction,
+    });
+
+    if (eliminatedName) {
+      message = `${eliminatedName} was eliminated during the night.`;
+    } else if (savedUid && targetUid === savedUid) {
+      const savedPlayer = game.players.find((player) => player.uid === savedUid);
+      if (savedPlayer) {
+        message = `${savedPlayer.name} survived the night thanks to the doctor.`;
+      }
+    } else {
+      message = "It was a quiet night. No one was eliminated.";
+    }
+
+    messagePhase = "day";
+  });
+
+  // Generate AI commentary for night events
+  const gameData = (await getDoc(gameRef)).data() as MafiaGame;
+  const eliminatedPlayer = gameData.players.find(p => p.name === eliminatedName);
+  
+  const commentary = await generateNightCommentary({
+    eliminatedName: eliminatedName || undefined,
+    eliminatedRole: eliminatedPlayer?.role,
+    savedByDoctor: savedUid && targetUid === savedUid,
+    round: gameData.round,
+  });
+
+  if (commentary) {
+    await recordSystemMessage(gameId, commentary, messagePhase);
+  }
+
+  // Check win conditions after night elimination
+  await checkWinCondition(gameId);
 };
 
 export const updateVotes = async (gameId: string, votes: VoteState[]) => {
@@ -275,9 +1004,82 @@ export const submitVote = async (
   const snapshot = await getDoc(gameRef);
   if (!snapshot.exists()) return;
   const game = snapshot.data() as MafiaGame;
+  
+  const existingVote = game.votes?.find((entry) => entry.voterUid === vote.voterUid);
   const votes = [...(game.votes ?? [])].filter((entry) => entry.voterUid !== vote.voterUid);
   votes.push(vote);
-  await updateVotes(gameId, votes);
+
+  // Check if all alive players have voted
+  const alivePlayers = game.players.filter((p) => p.isAlive);
+  const alivePlayerUids = alivePlayers.map((p) => p.uid);
+  const voterUids = votes.map((v) => v.voterUid);
+  const allVoted = alivePlayerUids.every((uid) => voterUids.includes(uid));
+
+  let dayEliminationState = game.dayEliminationState;
+
+  if (allVoted && game.phase === "day") {
+    // Calculate vote counts
+    const voteCount = new Map<string, number>();
+    votes.forEach((v) => {
+      voteCount.set(v.targetUid, (voteCount.get(v.targetUid) || 0) + 1);
+    });
+
+    // Find the player with the most votes
+    let maxVotes = 0;
+    let leadingUid: string | null = null;
+    voteCount.forEach((count, uid) => {
+      if (count > maxVotes) {
+        maxVotes = count;
+        leadingUid = uid;
+      }
+    });
+
+    if (leadingUid) {
+      const leadingPlayer = game.players.find((p) => p.uid === leadingUid);
+      dayEliminationState = {
+        votingComplete: true,
+        leadingCandidateUid: leadingUid,
+        leadingCandidateName: leadingPlayer?.name || "Unknown",
+        leadingVoteCount: maxVotes,
+        totalVoters: alivePlayers.length,
+        eliminated: false,
+      };
+    }
+  }
+
+  await updateDoc(gameRef, { 
+    votes,
+    ...(dayEliminationState && { dayEliminationState })
+  });
+
+  // Record vote event
+  const voter = game.players.find((p) => p.uid === vote.voterUid);
+  const target = game.players.find((p) => p.uid === vote.targetUid);
+  
+  if (voter && target) {
+    if (existingVote && existingVote.targetUid !== vote.targetUid) {
+      // Vote changed
+      const previousTarget = game.players.find((p) => p.uid === existingVote.targetUid);
+      if (previousTarget) {
+        await recordGameEvent(gameId, "vote-changed", game.phase, game.round, {
+          voterUid: voter.uid,
+          voterName: voter.name,
+          previousTargetUid: previousTarget.uid,
+          previousTargetName: previousTarget.name,
+          newTargetUid: target.uid,
+          newTargetName: target.name,
+        });
+      }
+    } else if (!existingVote) {
+      // New vote cast
+      await recordGameEvent(gameId, "vote-cast", game.phase, game.round, {
+        voterUid: voter.uid,
+        voterName: voter.name,
+        targetUid: target.uid,
+        targetName: target.name,
+      });
+    }
+  }
 };
 
 export const clearVote = async (gameId: string, voterUid: string) => {
@@ -296,16 +1098,156 @@ export const advancePhase = async (gameId: string, nextPhase: MafiaGame["phase"]
     throw new Error("Game not found");
   }
   const game = snapshot.data() as MafiaGame;
+
+  // Check if there's a pending elimination decision
+  if (game.phase === "day" && game.dayEliminationState?.votingComplete && !game.dayEliminationState.eliminated) {
+    throw new Error("Cannot advance phase until elimination decision is made");
+  }
+
   const duration =
     nextPhase === "day"
       ? game.config.dayDurationMinutes
-      : game.config.nightDurationMinutes;
-  await updateDoc(gameRef, {
+      : nextPhase === "night"
+      ? game.config.nightDurationMinutes
+      : null;
+  const now = Date.now();
+  const updates: Partial<MafiaGame> = {
     phase: nextPhase,
-    phaseEndsAt: Date.now() + duration * 60 * 1000,
+    phaseEndsAt: duration ? now + duration * 60 * 1000 : null,
     round: nextPhase === "night" ? game.round + 1 : game.round,
     lastAction: `Advanced to ${nextPhase}`,
+    votes: [], // Clear votes when advancing to new phase
+  };
+
+  if (nextPhase === "night") {
+    updates.nightState = createInitialNightState("mafia");
+  } else if (nextPhase === "day") {
+    const existingState = game.nightState;
+    updates.nightState = {
+      ...createInitialNightState("idle"),
+      detectiveResult: existingState?.detectiveResult ?? null,
+    };
+    // Clear day elimination state for new day
+    updates.dayEliminationState = null;
+  }
+
+  await updateDoc(gameRef, updates);
+
+  // Record phase change event
+  await recordGameEvent(gameId, "phase-changed", nextPhase, updates.round ?? game.round, {
+    previousPhase: game.phase,
+    newPhase: nextPhase,
+    round: updates.round ?? game.round,
   });
+};
+
+export const eliminateDayCandidate = async (gameId: string, targetUid: string) => {
+  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(gameRef);
+    if (!snapshot.exists()) {
+      throw new Error("Game not found");
+    }
+
+    const game = snapshot.data() as MafiaGame;
+    if (game.phase !== "day") {
+      throw new Error("Can only eliminate during day phase");
+    }
+
+    const players = [...game.players];
+    const targetIndex = players.findIndex((p) => p.uid === targetUid);
+    if (targetIndex === -1) {
+      throw new Error("Target player not found");
+    }
+
+    const target = players[targetIndex];
+    if (!target.isAlive) {
+      throw new Error("Target is already eliminated");
+    }
+
+    players[targetIndex] = { ...target, isAlive: false };
+
+    transaction.update(gameRef, {
+      players,
+      dayEliminationState: {
+        ...game.dayEliminationState,
+        eliminated: true,
+      },
+      votes: [],
+      lastAction: `${target.name} was eliminated by vote`,
+    });
+  });
+
+  // Record elimination event
+  const game = (await getDoc(gameRef)).data() as MafiaGame;
+  const eliminated = game.players.find((p) => p.uid === targetUid);
+  if (eliminated) {
+    await recordGameEvent(gameId, "day-elimination", "day", game.round, {
+      eliminatedUid: eliminated.uid,
+      eliminatedName: eliminated.name,
+      eliminatedRole: eliminated.role,
+      voteCount: game.dayEliminationState?.leadingVoteCount ?? 0,
+    });
+
+    // Generate AI commentary for day elimination
+    const commentary = await generateDayCommentary({
+      eliminatedName: eliminated.name,
+      eliminatedRole: eliminated.role!,
+      voteCount: game.dayEliminationState?.leadingVoteCount ?? 0,
+      round: game.round,
+    });
+
+    if (commentary) {
+      await recordSystemMessage(gameId, commentary, "day");
+    }
+  }
+
+  // Check win conditions
+  await checkWinCondition(gameId);
+};
+
+export const checkWinCondition = async (gameId: string) => {
+  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const snapshot = await getDoc(gameRef);
+  if (!snapshot.exists()) return;
+
+  const game = snapshot.data() as MafiaGame;
+  const alivePlayers = game.players.filter((p) => p.isAlive);
+  const aliveMafia = alivePlayers.filter((p) => p.role === "mafia");
+  const aliveNonMafia = alivePlayers.filter((p) => p.role !== "mafia");
+
+  let winner: "mafia" | "village" | null = null;
+  let winMessage = "";
+
+  // Mafia wins if they equal or outnumber non-mafia
+  if (aliveMafia.length >= aliveNonMafia.length && aliveMafia.length > 0) {
+    winner = "mafia";
+    winMessage = "🎭 Mafia wins! They have achieved numerical superiority.";
+  }
+  // Village wins if all mafia are eliminated
+  else if (aliveMafia.length === 0 && aliveNonMafia.length > 0) {
+    winner = "village";
+    winMessage = "🏆 Village wins! All mafia members have been eliminated.";
+  }
+
+  if (winner) {
+    await updateDoc(gameRef, {
+      phase: "ended",
+      status: "completed",
+      phaseEndsAt: null,
+      lastAction: winMessage,
+    });
+
+    await recordGameEvent(gameId, "game-ended", "ended", game.round, {
+      winner,
+      aliveMafiaCount: aliveMafia.length,
+      aliveVillageCount: aliveNonMafia.length,
+      totalRounds: game.round,
+    });
+
+    await recordSystemMessage(gameId, winMessage, "ended");
+  }
 };
 
 export const archiveGame = async (gameId: string) => {

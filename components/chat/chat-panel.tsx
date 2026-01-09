@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { SmileIcon, SendIcon } from "lucide-react";
+import { SmileIcon, SendIcon, MicIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const EMOJI_PRESETS = ["😀", "😂", "😎", "🤔", "😱", "🧐", "🔥", "💀", "🌕", "🎭"];
@@ -14,16 +14,20 @@ const EMOJI_PRESETS = ["😀", "😂", "😎", "🤔", "😱", "🧐", "🔥", "
 interface ChatPanelProps {
   messages: GameMessage[];
   onSend: (text: string) => Promise<void> | void;
+  onSendVoice?: (file: File, duration: number) => Promise<void> | void;
   phase: string;
   disabled?: boolean;
+  voiceEnabled?: boolean;
 }
 
-export function ChatPanel({ messages, onSend, phase, disabled }: ChatPanelProps) {
+export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, voiceEnabled = false }: ChatPanelProps) {
   const [value, setValue] = useState("");
+  const [isRecording, setIsRecording] = useState(false);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
   const sortedMessages = useMemo(
-    () => [...messages].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0)),
+    () => [...messages].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)),
     [messages]
   );
 
@@ -33,20 +37,109 @@ export function ChatPanel({ messages, onSend, phase, disabled }: ChatPanelProps)
     const text = value.trim();
     setValue("");
     await onSend(text);
-    queueMicrotask(() => {
-      const container = viewportRef.current;
-      if (container) {
-        container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-      }
-    });
+  };
+
+  const startRecording = async () => {
+    if (!onSendVoice) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      const startTime = Date.now();
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunks.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        const duration = Date.now() - startTime;
+        const file = new File([blob], `voice-${Date.now()}.webm`, { type: "audio/webm" });
+        await onSendVoice(file, duration);
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      recorder.start();
+      setMediaRecorder(recorder);
+      setIsRecording(true);
+    } catch (error) {
+      console.error("Failed to start recording:", error);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop();
+      setMediaRecorder(null);
+      setIsRecording(false);
+    }
   };
 
   return (
     <Card className="flex h-full flex-col">
       <CardHeader>
-        <CardTitle className="text-base capitalize">{phase} chat</CardTitle>
+        <CardTitle className="text-base capitalize">
+          {disabled ? "👻 " : ""}{phase} chat{disabled ? " (Observer)" : ""}
+        </CardTitle>
       </CardHeader>
       <CardContent className="flex h-full flex-col gap-4">
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <Textarea
+            placeholder={disabled ? "You cannot participate in chat as an observer" : "Share a hunch with the town..."}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            disabled={disabled || isRecording}
+            rows={3}
+          />
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button type="button" variant="ghost" size="sm" disabled={disabled || isRecording}>
+                    <SmileIcon className="mr-2 h-4 w-4" aria-hidden />
+                    Emoji
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-fit">
+                  <div className="grid grid-cols-5 gap-2">
+                    {EMOJI_PRESETS.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        className="grid h-10 w-10 place-items-center rounded-md text-xl hover:bg-muted"
+                        onClick={() => setValue((prev) => `${prev} ${emoji}`.trim())}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              {voiceEnabled && onSendVoice && (
+                <Button
+                  type="button"
+                  variant={isRecording ? "destructive" : "ghost"}
+                  size="sm"
+                  onMouseDown={startRecording}
+                  onMouseUp={stopRecording}
+                  onMouseLeave={stopRecording}
+                  onTouchStart={startRecording}
+                  onTouchEnd={stopRecording}
+                  disabled={disabled}
+                >
+                  <MicIcon className={cn("mr-2 h-4 w-4", isRecording && "animate-pulse")} aria-hidden />
+                  {isRecording ? "Release to send" : "Hold to record"}
+                </Button>
+              )}
+            </div>
+            <Button type="submit" disabled={!value.trim() || disabled || isRecording}>
+              <SendIcon className="mr-2 h-4 w-4" aria-hidden />
+              Send
+            </Button>
+          </div>
+        </form>
         <div
           ref={viewportRef}
           className="h-64 flex-1 overflow-y-auto rounded-md border border-border/60 bg-background/60"
@@ -73,43 +166,6 @@ export function ChatPanel({ messages, onSend, phase, disabled }: ChatPanelProps)
             )}
           </div>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <Textarea
-            placeholder="Share a hunch with the town..."
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            disabled={disabled}
-            rows={3}
-          />
-          <div className="flex items-center justify-between gap-3">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button type="button" variant="ghost" size="sm" disabled={disabled}>
-                  <SmileIcon className="mr-2 h-4 w-4" aria-hidden />
-                  Emoji
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-fit">
-                <div className="grid grid-cols-5 gap-2">
-                  {EMOJI_PRESETS.map((emoji) => (
-                    <button
-                      key={emoji}
-                      type="button"
-                      className="grid h-10 w-10 place-items-center rounded-md text-xl hover:bg-muted"
-                      onClick={() => setValue((prev) => `${prev} ${emoji}`.trim())}
-                    >
-                      {emoji}
-                    </button>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
-            <Button type="submit" disabled={!value.trim() || disabled}>
-              <SendIcon className="mr-2 h-4 w-4" aria-hidden />
-              Send
-            </Button>
-          </div>
-        </form>
       </CardContent>
     </Card>
   );

@@ -23,6 +23,8 @@ export const gameConfigSchema = z.object({
   revealRolesOnDeath: z.boolean(),
   dayDurationMinutes: z.number().int().min(1).max(30),
   nightDurationMinutes: z.number().int().min(1).max(30),
+  detectiveOncePerRound: z.boolean(),
+  detectiveChecksLimit: z.number().int().min(0).max(16).nullable(),
   roles: z
     .array(roleConfigSchema)
     .nonempty()
@@ -49,6 +51,16 @@ export const gameConfigSchema = z.object({
         });
       }
     }),
+}).superRefine((config, ctx) => {
+  if (!config.detectiveOncePerRound) {
+    if (config.detectiveChecksLimit === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["detectiveChecksLimit"],
+        message: "Provide the number of investigations available to the detective.",
+      });
+    }
+  }
 });
 
 export const createGameSchema = z.object({
