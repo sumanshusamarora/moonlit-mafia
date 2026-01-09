@@ -72,7 +72,7 @@ export function PhaseStatusCard({
   const hostControlsVisible = isHost && timerActive && (onExtendTimer || onResetTimer);
 
   return (
-    <Card className="border border-primary/40 bg-primary/5">
+    <Card className="border border-primary/40 bg-primary/5" data-testid="phase-status-card">
       <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div className="flex items-center gap-2">

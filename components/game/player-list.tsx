@@ -30,6 +30,10 @@ export function PlayerList({ players, viewerId, revealRoles }: PlayerListProps) 
               "flex items-center justify-between rounded-lg border border-border/60 bg-background/70 p-4 transition",
               !player.isAlive && "opacity-80 grayscale"
             )}
+            data-testid="player-row"
+            data-player-id={player.uid}
+            data-player-name={player.name}
+            data-player-ready={player.ready ? "ready" : "not-ready"}
           >
             <div className="flex items-center gap-3">
               <Avatar name={player.name} size="md" status={status} />

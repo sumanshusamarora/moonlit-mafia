@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
@@ -37,10 +37,28 @@ export default function GameRoomPage() {
   const { user } = useAuth();
   const [isBusy, setIsBusy] = useState(false);
   const [timerBusy, setTimerBusy] = useState(false);
+  const [automationReadyEnabled, setAutomationReadyEnabled] = useState(false);
 
   const viewerId = user?.uid ?? "";
   const viewer = useMemo(() => game?.players.find((player) => player.uid === viewerId), [game, viewerId]);
   const isHost = viewer?.isHost ?? false;
+  const autoGameId = game?.id ?? null;
+  const autoPhase = game?.phase ?? null;
+  const autoViewerId = viewer?.uid ?? null;
+  const autoViewerReady = viewer?.ready ?? false;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setAutomationReadyEnabled(window.localStorage.getItem("mafia-auto-ready") === "true");
+  }, []);
+
+  useEffect(() => {
+    if (!automationReadyEnabled) return;
+    if (!autoGameId || !autoViewerId || autoViewerReady || autoPhase !== "lobby") return;
+    updatePlayerReadyState(autoGameId, autoViewerId, true).catch((error) => {
+      console.error("Automation failed to toggle ready state", error);
+    });
+  }, [automationReadyEnabled, autoGameId, autoPhase, autoViewerId, autoViewerReady]);
 
   const handleReadyToggle = async () => {
     if (!game || !viewer) return;
@@ -245,7 +263,9 @@ export default function GameRoomPage() {
     <AppShell
       headerSlot={
         <div className="flex items-center gap-3">
-          <Badge variant="secondary">Code: {game.code}</Badge>
+          <Badge variant="secondary" data-testid="game-code-display">
+            Code: {game.code}
+          </Badge>
           <Button size="sm" variant="outline" onClick={copyCode}>
             Copy code
           </Button>
@@ -272,17 +292,33 @@ export default function GameRoomPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {game.phase === "lobby" && (
-                    <Button size="sm" variant="outline" onClick={handleReadyToggle}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleReadyToggle}
+                      data-testid="ready-toggle"
+                      data-ready-state={viewer?.ready ? "ready" : "not-ready"}
+                    >
                       {viewer?.ready ? "Unready" : "Ready up"}
                     </Button>
                   )}
                   {isHost && game.phase === "lobby" && (
-                    <Button size="sm" onClick={handleStart} disabled={!everyoneReady || isBusy}>
+                    <Button
+                      size="sm"
+                      onClick={handleStart}
+                      disabled={!everyoneReady || isBusy}
+                      data-testid="start-game-button"
+                    >
                       {isBusy ? "Starting..." : "Start game"}
                     </Button>
                   )}
                   {isHost && game.phase !== "ended" && game.phase !== "lobby" && (
-                    <Button size="sm" variant="outline" onClick={handleAdvancePhase}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleAdvancePhase}
+                      data-testid="advance-phase-button"
+                    >
                       {game.phase === "day" ? (
                         <>
                           <MoonIcon className="mr-2 h-4 w-4" aria-hidden />

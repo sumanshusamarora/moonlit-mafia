@@ -100,6 +100,35 @@ Restart `npm run dev` after adding env vars so Next.js can pick them up.
 6. **Deploy** – Click **Deploy**. The first build takes ~2 minutes. Once finished, Vercel provides a production URL you can share.
 7. **Post-deploy checks** – Visit the site, create a lobby, and confirm Firestore/Storage writes succeed. When you harden security rules, re-deploy if needed.
 
+## Automated UI Smoke Test
+
+Opening four browsers just to sanity-check a session is tedious, so the repo ships with a Playwright-powered Python script that spins up the minimum number of players, starts a game, and posts a chat message.
+
+### Prerequisites
+1. Start the Next.js app locally (`npm run dev`) or have a deployed URL handy.
+2. Create a virtual environment (optional but recommended) and install the test dependencies:
+	```bash
+	python -m venv .venv
+	source .venv/bin/activate
+	pip install -r tests/automation/requirements.txt
+	python -m playwright install
+	```
+
+### Running the smoke test
+```bash
+python tests/automation/moonlit_mafia_smoke.py --base-url http://localhost:3000
+```
+
+What it does:
+- Creates a lobby as the host, captures the join code, and shares it with three additional browser contexts (the minimum required to start a match).
+- Toggles each player to “Ready”, starts the game as the host, and posts a chat message once the first night begins.
+- Fails fast if any UI element is missing or unresponsive (e.g., Ready/Start buttons stay disabled), returning a non-zero exit code for CI.
+
+Flags & tips:
+- Pass `--headed` to watch the browsers drive the UI; omit it to run headless (default).
+- Override the target URL with `--base-url https://your-vercel-domain.vercel.app` or set the `MAFIA_BASE_URL` env var.
+- Adjust `--player-count` (4–6) if you want to mimic a larger lobby; names auto-generate beyond the included presets.
+
 ## Project Structure
 
 ```
