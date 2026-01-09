@@ -41,7 +41,7 @@ export default function GameRoomPage() {
   const [isBusy, setIsBusy] = useState(false);
   const [timerBusy, setTimerBusy] = useState(false);
   const [automationReadyEnabled, setAutomationReadyEnabled] = useState(false);
-  const [activeTab, setActiveTab] = useState("action");
+  const [activeTab, setActiveTab] = useState("game");
 
   const viewerId = user?.uid ?? "";
   const viewer = useMemo(() => game?.players.find((player) => player.uid === viewerId), [game, viewerId]);
@@ -327,9 +327,8 @@ export default function GameRoomPage() {
   const viewerRole = viewer?.role ?? null;
   
   const tabs = [
-    { id: "action", label: "Action", icon: <ActivityIcon className="h-4 w-4" /> },
+    { id: "game", label: "Game", icon: <ActivityIcon className="h-4 w-4" />, badge: unreadMessages },
     { id: "players", label: "Players", icon: <UsersIcon className="h-4 w-4" />, badge: game.players.filter(p => p.isAlive).length },
-    { id: "chat", label: "Chat", icon: <MessageSquareIcon className="h-4 w-4" />, badge: unreadMessages },
     ...(isHost ? [{ id: "host", label: "Host", icon: <SettingsIcon className="h-4 w-4" /> }] : []),
   ];
 
@@ -389,9 +388,10 @@ export default function GameRoomPage() {
           activeTab={activeTab} 
           onTabChange={setActiveTab}
         >
-          {/* Action Tab */}
-          <div data-tab="action" className={activeTab === "action" ? "block pb-20" : "hidden"}>
-            <div className="p-4">
+          {/* Game Tab - Combined Action + Chat */}
+          <div data-tab="game" className={activeTab === "game" ? "block pb-20" : "hidden"}>
+            <div className="space-y-4 p-4">
+              {/* Action Center */}
               <ActionCenter 
                 game={game} 
                 viewerId={viewerId} 
@@ -399,6 +399,16 @@ export default function GameRoomPage() {
                 onClearVote={handleClearVote} 
                 onReadyToggle={handleReadyToggle} 
               />
+              
+              {/* Chat Panel */}
+              <div className="h-[400px]">
+                <ChatPanel
+                  messages={messages}
+                  onSend={handleSendMessage}
+                  phase={game.phase}
+                  disabled={!viewer}
+                />
+              </div>
             </div>
           </div>
 
@@ -421,18 +431,6 @@ export default function GameRoomPage() {
                 />
               </CardContent>
             </Card>
-          </div>
-
-          {/* Chat Tab */}
-          <div data-tab="chat" className={activeTab === "chat" ? "block pb-20" : "hidden"}>
-            <div className="h-[calc(100vh-140px)]">
-              <ChatPanel
-                messages={messages}
-                onSend={handleSendMessage}
-                phase={game.phase}
-                disabled={!viewer}
-              />
-            </div>
           </div>
 
           {/* Host Controls Tab (if host) */}

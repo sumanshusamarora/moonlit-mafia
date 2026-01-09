@@ -1143,20 +1143,22 @@ export const checkWinCondition = async (gameId: string) => {
   if (!snapshot.exists()) return;
 
   const game = snapshot.data() as MafiaGame;
-  const alivePlayers = game.players.filter((p) => p.isAlive);
+  // Only count players with assigned roles (excludes players who weren't ready at game start)
+  const alivePlayers = game.players.filter((p) => p.isAlive && p.role !== null);
   const aliveMafia = alivePlayers.filter((p) => p.role === "mafia");
-  const aliveNonMafia = alivePlayers.filter((p) => p.role !== "mafia");
+  // All non-mafia roles count as village (doctor, detective, villager)
+  const aliveVillage = alivePlayers.filter((p) => p.role !== "mafia");
 
   let winner: "mafia" | "village" | null = null;
   let winMessage = "";
 
-  // Mafia wins if they equal or outnumber non-mafia
-  if (aliveMafia.length >= aliveNonMafia.length && aliveMafia.length > 0) {
+  // Mafia wins if they equal or outnumber non-mafia (village team)
+  if (aliveMafia.length >= aliveVillage.length && aliveMafia.length > 0) {
     winner = "mafia";
     winMessage = "🎭 Mafia wins! They have achieved numerical superiority.";
   }
   // Village wins if all mafia are eliminated
-  else if (aliveMafia.length === 0 && aliveNonMafia.length > 0) {
+  else if (aliveMafia.length === 0 && aliveVillage.length > 0) {
     winner = "village";
     winMessage = "🏆 Village wins! All mafia members have been eliminated.";
   }
@@ -1172,7 +1174,7 @@ export const checkWinCondition = async (gameId: string) => {
     await recordGameEvent(gameId, "game-ended", "ended", game.round, {
       winner,
       aliveMafiaCount: aliveMafia.length,
-      aliveVillageCount: aliveNonMafia.length,
+      aliveVillageCount: aliveVillage.length,
       totalRounds: game.round,
     });
 
