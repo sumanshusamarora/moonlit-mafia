@@ -368,6 +368,20 @@ export default function GameRoomPage() {
         </div>
       }
     >
+      {/* Game End Banner - Visible to ALL players */}
+      {game.phase === "ended" && (
+        <div className="sticky top-0 z-50 border-b-4 border-primary bg-gradient-to-r from-primary/20 via-primary/10 to-primary/20 p-4 shadow-lg">
+          <div className="mx-auto max-w-4xl text-center">
+            <h2 className="text-2xl font-bold text-primary sm:text-3xl">
+              {game.lastAction || "🏆 Game has ended"}
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground sm:text-base">
+              Check the chat and activity timeline for complete results and role reveals.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Mobile-First Tab Navigation (lg and below) */}
       <div className="lg:hidden">
         <MobileTabs 
