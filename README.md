@@ -1,6 +1,6 @@
 ## Moonlit Mafia
 
-Moonlit Mafia is a lightweight social deduction platform for running remote Mafia game nights. Hosts can spin up shareable lobbies, configure roles on the fly, guide day and night phases, and keep players engaged with real-time chat and AI-powered narrative commentary—all deployable to Vercel's free tier.
+Moonlit Mafia is a lightweight social deduction platform for running remote Mafia game nights. Hosts can spin up shareable lobbies, configure roles on the fly, guide day and night phases, and keep players engaged with real-time chat, voice messages, and AI-powered narrative commentary—all deployable to Vercel's free tier.
 
 ### Highlights
 - **Mobile-first design** – bottom tab navigation, collapsible sections, floating action buttons optimized for touch screens
@@ -8,14 +8,15 @@ Moonlit Mafia is a lightweight social deduction platform for running remote Mafi
 - **Role presets & tuning** – adjust counts per role with guardrails to keep games balanced for 4–16 players
 - **Real-time sync** – Firestore listeners keep player readiness, phase transitions, votes, and chat aligned
 - **AI commentary** (optional) – dramatic game narration using OpenAI gpt-4o-mini with 30+ custom template fallbacks
-- **Integrated chat** – day/night channels with emoji shortcuts and system messages
+- **Integrated chat** – day/night channels with emoji shortcuts, voice messages, and system messages
+- **Voice messaging** – record and send audio messages directly in chat with playback controls
 - **Host controls** – start/advance phases, archive sessions, and manage investigations with a click
 
 ### Tech Stack
 - Next.js 16 (App Router, Turbopack) + TypeScript
 - Tailwind CSS + shadcn/ui primitives
 - Zustand + React Query for client state and caching
-- Firebase Authentication and Firestore
+- Firebase Authentication, Firestore, and Storage
 - OpenAI GPT-4o-mini (optional - uses template fallbacks if not configured)
 - Vercel-friendly configuration with dynamic routes and edge-ready components
 
@@ -44,7 +45,7 @@ Moonlit Mafia is a lightweight social deduction platform for running remote Mafi
 
 ## Firebase Setup (Step-by-step)
 
-Moonlit Mafia relies on Firebase for authentication and Firestore (real-time state). These steps assume you have no prior Firebase experience.
+Moonlit Mafia relies on Firebase for authentication, Firestore (real-time state), and Storage (voice messages). These steps assume you have no prior Firebase experience.
 
 ### 1. Create a Firebase project
 - Visit [console.firebase.google.com](https://console.firebase.google.com/) and click **Add project**.
@@ -66,7 +67,13 @@ Moonlit Mafia relies on Firebase for authentication and Firestore (real-time sta
 - Choose a region close to your players and select **Start in test mode** while prototyping. Test mode automatically expires after 30 days; before launch, replace it with production rules that validate document shapes and ensure only authenticated users can read/write.
 - After the database is provisioned, you can optionally create a `games` collection, but it isn't required—the app will create documents the first time a lobby is made.
 
-### 5. Configure environment variables
+### 5. Enable Firebase Storage (for voice messages)
+- Navigate to **Build → Storage** and click **Get started**.
+- Choose **Start in test mode** for initial setup, then click **Next**.
+- Select the same region as your Firestore database and click **Done**.
+- After setup, go to the **Rules** tab and replace the default rules with the contents from `storage.rules` in this repository. This allows authenticated users to upload voice messages up to 5MB.
+
+### 6. Configure environment variables
 - Copy `.env.example` to `.env.local` and fill in the following keys using the values from your Firebase web app settings.
 
 | Variable | Description |
@@ -74,6 +81,7 @@ Moonlit Mafia relies on Firebase for authentication and Firestore (real-time sta
 | `NEXT_PUBLIC_FIREBASE_API_KEY` | `apiKey` from Firebase config. |
 | `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | `authDomain`, usually `<project-id>.firebaseapp.com`. |
 | `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | Your Firebase project ID. |
+| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | Storage bucket URL, usually `<project-id>.appspot.com`. |
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | `messagingSenderId` value. |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | `appId` from the config snippet. |
 | `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` | Optional—only needed if you enabled Analytics. |

@@ -84,6 +84,8 @@ export interface GameMessage {
   authorName: string;
   body: string;
   emoji?: string;
+  voiceUrl?: string;
+  voiceDuration?: number;
   createdAt: number;
   phase: GamePhase;
   isSystem?: boolean;

@@ -7,6 +7,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { SmileIcon, SendIcon } from "lucide-react";
+import { VoiceRecorder } from "./voice-recorder";
+import { VoicePlayer } from "./voice-player";
 import { cn } from "@/lib/utils";
 
 const EMOJI_PRESETS = ["😀", "😂", "😎", "🤔", "😱", "🧐", "🔥", "💀", "🌕", "🎭"];
@@ -14,12 +16,14 @@ const EMOJI_PRESETS = ["😀", "😂", "😎", "🤔", "😱", "🧐", "🔥", "
 interface ChatPanelProps {
   messages: GameMessage[];
   onSend: (text: string) => Promise<void> | void;
+  onSendVoice?: (audioBlob: Blob) => Promise<void> | void;
   phase: string;
   disabled?: boolean;
 }
 
-export function ChatPanel({ messages, onSend, phase, disabled }: ChatPanelProps) {
+export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled }: ChatPanelProps) {
   const [value, setValue] = useState("");
+  const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
   const sortedMessages = useMemo(
@@ -29,10 +33,24 @@ export function ChatPanel({ messages, onSend, phase, disabled }: ChatPanelProps)
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!value.trim() || disabled) return;
+    if (disabled) return;
+
+    // Send voice message if recorded
+    if (voiceBlob && onSendVoice) {
+      await onSendVoice(voiceBlob);
+      setVoiceBlob(null);
+      return;
+    }
+
+    // Send text message if present
+    if (!value.trim()) return;
     const text = value.trim();
     setValue("");
     await onSend(text);
+  };
+
+  const handleRecordingReady = (audioBlob: Blob | null) => {
+    setVoiceBlob(audioBlob);
   };
 
   return (
@@ -48,14 +66,14 @@ export function ChatPanel({ messages, onSend, phase, disabled }: ChatPanelProps)
             placeholder={disabled ? "You cannot participate in chat as an observer" : "Share a hunch with the town..."}
             value={value}
             onChange={(event) => setValue(event.target.value)}
-            disabled={disabled}
+            disabled={disabled || !!voiceBlob}
             rows={3}
           />
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button type="button" variant="ghost" size="sm" disabled={disabled}>
+                  <Button type="button" variant="ghost" size="sm" disabled={disabled || !!voiceBlob}>
                     <SmileIcon className="mr-2 h-4 w-4" aria-hidden />
                     Emoji
                   </Button>
@@ -75,8 +93,14 @@ export function ChatPanel({ messages, onSend, phase, disabled }: ChatPanelProps)
                   </div>
                 </PopoverContent>
               </Popover>
+              {onSendVoice && (
+                <VoiceRecorder
+                  onRecordingReady={handleRecordingReady}
+                  disabled={disabled || !!value.trim()}
+                />
+              )}
             </div>
-            <Button type="submit" disabled={!value.trim() || disabled}>
+            <Button type="submit" disabled={(!value.trim() && !voiceBlob) || disabled}>
               <SendIcon className="mr-2 h-4 w-4" aria-hidden />
               Send
             </Button>
@@ -99,8 +123,18 @@ export function ChatPanel({ messages, onSend, phase, disabled }: ChatPanelProps)
                   <span className="font-semibold text-foreground">{message.authorName}</span>
                   <span>{formatRelative(message.createdAt)}</span>
                 </div>
-                <p>{message.body}</p>
-                {message.emoji && <span className="text-lg">{message.emoji}</span>}
+                {message.voiceUrl ? (
+                  <VoicePlayer
+                    voiceUrl={message.voiceUrl}
+                    duration={message.voiceDuration || 0}
+                    authorName={message.authorName}
+                  />
+                ) : (
+                  <>
+                    <p>{message.body}</p>
+                    {message.emoji && <span className="text-lg">{message.emoji}</span>}
+                  </>
+                )}
               </div>
             ))}
             {!sortedMessages.length && (

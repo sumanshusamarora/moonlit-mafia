@@ -16,6 +16,7 @@ import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { FloatingActionButton } from "@/components/ui/floating-action-button";
 import { useGameRoom } from "@/hooks/use-game-room";
 import { useAuth } from "@/components/providers/auth-provider";
+import { uploadVoiceMessage } from "@/lib/firebase/storage";
 import {
   advancePhase,
   archiveGame,
@@ -130,6 +131,36 @@ export default function GameRoomPage() {
       });
     } catch (error) {
       toast.error("Message failed to send");
+      console.error(error);
+    }
+  };
+
+  const handleSendVoiceMessage = async (audioBlob: Blob) => {
+    if (!game || !viewer) {
+      toast.error("You must join the lobby before sending voice messages.");
+      return;
+    }
+    const authorName = viewer.name || user?.displayName || "Mystery Player";
+    try {
+      toast.loading("Uploading voice message...");
+      const { url, duration } = await uploadVoiceMessage(game.id, viewer.uid, audioBlob);
+      
+      await postMessage(game.id, {
+        gameId: game.id,
+        authorUid: viewer.uid,
+        authorName,
+        body: "[Voice Message]",
+        voiceUrl: url,
+        voiceDuration: duration,
+        createdAt: Date.now(),
+        phase: game.phase,
+      });
+      
+      toast.dismiss();
+      toast.success("Voice message sent!");
+    } catch (error) {
+      toast.dismiss();
+      toast.error("Failed to send voice message");
       console.error(error);
     }
   };
@@ -404,6 +435,7 @@ export default function GameRoomPage() {
                 <ChatPanel
                   messages={messages}
                   onSend={handleSendMessage}
+                  onSendVoice={handleSendVoiceMessage}
                   phase={game.phase}
                   disabled={!viewer}
                 />
@@ -780,6 +812,7 @@ export default function GameRoomPage() {
             <ChatPanel
               messages={messages}
               onSend={handleSendMessage}
+              onSendVoice={handleSendVoiceMessage}
               phase={game.phase}
               disabled={!viewer}
             />
