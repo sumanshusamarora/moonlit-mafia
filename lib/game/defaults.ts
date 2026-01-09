@@ -8,7 +8,6 @@ const defaultMafiaCount = defaultRoleConfig.find((role) => role.role === "mafia"
 
 export const DEFAULT_GAME_CONFIG: GameConfig = {
   maxPlayers: DEFAULT_PLAYER_CAP,
-  enableVoice: true,
   enableAnonymousVotes: false,
   revealRolesOnDeath: true,
   dayDurationMinutes: 4,

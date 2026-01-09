@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     default: "Moonlit Mafia"
   },
   description:
-    "Host and play immersive Mafia games online with configurable roles, live chat, voting, and voice memos.",
+    "Host and play immersive Mafia games online with configurable roles, live chat, voting, and cinematic narration.",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

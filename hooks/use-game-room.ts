@@ -1,15 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { MafiaGame, GameMessage, GameVoiceMemo } from "@/types/game";
-import { listenToGame, listenToMessages, listenToVoiceMemos } from "@/lib/game/service";
+import type { MafiaGame, GameMessage } from "@/types/game";
+import { listenToGame, listenToMessages } from "@/lib/game/service";
 
 interface GameRoomState {
   gameId: string | null;
   gameReady: boolean;
   game: MafiaGame | null;
   messages: GameMessage[];
-  voiceMemos: GameVoiceMemo[];
 }
 
 export function useGameRoom(gameId: string | null) {
@@ -18,7 +17,6 @@ export function useGameRoom(gameId: string | null) {
     gameReady: false,
     game: null,
     messages: [],
-    voiceMemos: [],
   });
 
   useEffect(() => {
@@ -54,11 +52,6 @@ export function useGameRoom(gameId: string | null) {
       createdAt: normalizeTimestamp(message.createdAt),
     });
 
-    const normalizeMemo = (memo: GameVoiceMemo): GameVoiceMemo => ({
-      ...memo,
-      createdAt: normalizeTimestamp(memo.createdAt),
-    });
-
     let active = true;
 
     const unsubscribeGame = listenToGame(gameId, (incoming) => {
@@ -80,27 +73,16 @@ export function useGameRoom(gameId: string | null) {
       }));
     });
 
-    const unsubscribeVoice = listenToVoiceMemos(gameId, (incoming) => {
-      if (!active) return;
-      setState((prev) => ({
-        ...prev,
-        gameId,
-        voiceMemos: incoming.map(normalizeMemo),
-      }));
-    });
-
     return () => {
       active = false;
       unsubscribeGame();
       unsubscribeMessages();
-      unsubscribeVoice();
     };
   }, [gameId]);
 
   const isCurrentGame = gameId !== null && state.gameId === gameId;
   const game = isCurrentGame ? state.game : null;
   const messages = isCurrentGame ? state.messages : [];
-  const voiceMemos = isCurrentGame ? state.voiceMemos : [];
   const loading = gameId ? !isCurrentGame || !state.gameReady : false;
 
   const alivePlayers = useMemo(
@@ -115,7 +97,6 @@ export function useGameRoom(gameId: string | null) {
   return {
     game,
     messages,
-    voiceMemos,
     loading,
     alivePlayers,
     deadPlayers,

@@ -15,7 +15,7 @@ export function LandingHero() {
         <div className="space-y-6">
           <h1 className={cn("text-4xl font-bold tracking-tight sm:text-5xl md:text-6xl")}>Moonlit Mafia</h1>
           <p className="text-lg text-muted-foreground md:text-xl">
-            Spin up a lobby, assign custom roles, and keep the night lively with live chat, voting, and voice memos—all right in the browser.
+            Spin up a lobby, assign custom roles, and keep the night lively with live chat, structured voting, and cinematic narration—all right in the browser.
           </p>
         </div>
         <div className="flex flex-col gap-4 sm:flex-row">

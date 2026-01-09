@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { SmileIcon, SendIcon, MicIcon } from "lucide-react";
+import { SmileIcon, SendIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const EMOJI_PRESETS = ["😀", "😂", "😎", "🤔", "😱", "🧐", "🔥", "💀", "🌕", "🎭"];
@@ -14,16 +14,12 @@ const EMOJI_PRESETS = ["😀", "😂", "😎", "🤔", "😱", "🧐", "🔥", "
 interface ChatPanelProps {
   messages: GameMessage[];
   onSend: (text: string) => Promise<void> | void;
-  onSendVoice?: (file: File, duration: number) => Promise<void> | void;
   phase: string;
   disabled?: boolean;
-  voiceEnabled?: boolean;
 }
 
-export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, voiceEnabled = false }: ChatPanelProps) {
+export function ChatPanel({ messages, onSend, phase, disabled }: ChatPanelProps) {
   const [value, setValue] = useState("");
-  const [isRecording, setIsRecording] = useState(false);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
   const sortedMessages = useMemo(
@@ -39,44 +35,6 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, voic
     await onSend(text);
   };
 
-  const startRecording = async () => {
-    if (!onSendVoice) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      const chunks: Blob[] = [];
-      const startTime = Date.now();
-
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunks.push(event.data);
-        }
-      };
-
-      recorder.onstop = async () => {
-        const blob = new Blob(chunks, { type: "audio/webm" });
-        const duration = Date.now() - startTime;
-        const file = new File([blob], `voice-${Date.now()}.webm`, { type: "audio/webm" });
-        await onSendVoice(file, duration);
-        stream.getTracks().forEach((track) => track.stop());
-      };
-
-      recorder.start();
-      setMediaRecorder(recorder);
-      setIsRecording(true);
-    } catch (error) {
-      console.error("Failed to start recording:", error);
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorder && isRecording) {
-      mediaRecorder.stop();
-      setMediaRecorder(null);
-      setIsRecording(false);
-    }
-  };
-
   return (
     <Card className="flex h-full flex-col">
       <CardHeader>
@@ -90,14 +48,14 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, voic
             placeholder={disabled ? "You cannot participate in chat as an observer" : "Share a hunch with the town..."}
             value={value}
             onChange={(event) => setValue(event.target.value)}
-            disabled={disabled || isRecording}
+            disabled={disabled}
             rows={3}
           />
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button type="button" variant="ghost" size="sm" disabled={disabled || isRecording}>
+                  <Button type="button" variant="ghost" size="sm" disabled={disabled}>
                     <SmileIcon className="mr-2 h-4 w-4" aria-hidden />
                     Emoji
                   </Button>
@@ -117,24 +75,8 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, voic
                   </div>
                 </PopoverContent>
               </Popover>
-              {voiceEnabled && onSendVoice && (
-                <Button
-                  type="button"
-                  variant={isRecording ? "destructive" : "ghost"}
-                  size="sm"
-                  onMouseDown={startRecording}
-                  onMouseUp={stopRecording}
-                  onMouseLeave={stopRecording}
-                  onTouchStart={startRecording}
-                  onTouchEnd={stopRecording}
-                  disabled={disabled}
-                >
-                  <MicIcon className={cn("mr-2 h-4 w-4", isRecording && "animate-pulse")} aria-hidden />
-                  {isRecording ? "Release to send" : "Hold to record"}
-                </Button>
-              )}
             </div>
-            <Button type="submit" disabled={!value.trim() || disabled || isRecording}>
+            <Button type="submit" disabled={!value.trim() || disabled}>
               <SendIcon className="mr-2 h-4 w-4" aria-hidden />
               Send
             </Button>
@@ -145,9 +87,9 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, voic
           className="h-64 flex-1 overflow-y-auto rounded-md border border-border/60 bg-background/60"
         >
           <div className="flex flex-col gap-3 p-4">
-            {sortedMessages.map((message) => (
+            {sortedMessages.map((message, index) => (
               <div
-                key={message.id}
+                key={message.id || `${message.createdAt}-${message.authorUid}-${index}`}
                 className={cn(
                   "flex flex-col gap-1 rounded-md border border-border/40 bg-background/80 p-3 text-sm",
                   message.isSystem && "border-dashed text-muted-foreground"

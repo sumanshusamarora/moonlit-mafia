@@ -100,7 +100,6 @@ Mafia is a social deduction game where players are divided into two main teams: 
   - Phase timers
   - Detective mode (once-per-round vs limited checks)
   - Vote anonymity
-  - Voice memos
   - Role reveal on death
 
 **Start Requirements**:
@@ -415,7 +414,6 @@ ENDED (when win condition met)
 ```typescript
 {
   maxPlayers: number (4-20),
-  enableVoice: boolean,
   enableAnonymousVotes: boolean,
   revealRolesOnDeath: boolean,
   dayDurationMinutes: number,

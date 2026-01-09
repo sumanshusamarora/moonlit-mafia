@@ -44,10 +44,13 @@ export function useGameList() {
     );
 
     const normalize = (game: MafiaGame): MafiaGame => {
+      const gameAsRecord = game as unknown as Record<string, unknown>;
       const createdAt =
-        typeof (game as Record<string, unknown>).createdAt === "object" &&
+        typeof gameAsRecord.createdAt === "object" &&
         game.createdAt !== null &&
-        "toMillis" in (game as Record<string, unknown>).createdAt
+        typeof gameAsRecord.createdAt === "object" &&
+        gameAsRecord.createdAt !== null &&
+        "toMillis" in gameAsRecord.createdAt
           ? ((game as unknown as { createdAt: { toMillis: () => number } }).createdAt.toMillis() as number)
           : game.createdAt;
       return { ...game, createdAt };
@@ -74,13 +77,13 @@ export function useGameList() {
 
     const unsubHost = onSnapshot(hostQuery, (snapshot) => {
       hostGames = snapshot.docs
-        .map((doc) => ({ id: doc.id, ...(doc.data() as MafiaGame) }))
+        .map((doc) => (doc.data() as unknown as MafiaGame))
         .map(normalize);
       commit();
     });
     const unsubPlayer = onSnapshot(playerQuery, (snapshot) => {
       playerGames = snapshot.docs
-        .map((doc) => ({ id: doc.id, ...(doc.data() as MafiaGame) }))
+        .map((doc) => (doc.data() as unknown as MafiaGame))
         .map(normalize);
       commit();
     });

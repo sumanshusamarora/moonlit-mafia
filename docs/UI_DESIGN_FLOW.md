@@ -25,7 +25,7 @@
 1. **Action Center** (Sticky, highest priority)
 2. **Activity Timeline** (Scrollable feed of events)
 3. **Player List** (Compact roster at bottom)
-4. **Chat/Voice** (Sidebar or expandable panel)
+4. **Chat** (Sidebar or expandable panel)
 
 ---
 
@@ -40,11 +40,11 @@
 │                                                            │
 │  ┌──────────────────────────┐  ┌─────────────────────┐   │
 │  │                          │  │                     │   │
-│  │   ACTION CENTER          │  │   CHAT / VOICE      │   │
+│  │   ACTION CENTER          │  │   CHAT              │   │
 │  │   (Sticky, Fixed)        │  │   (Sidebar)         │   │
 │  │                          │  │                     │   │
 │  │   • Current Phase Info   │  │   • Messages        │   │
-│  │   • Your Role Reminder   │  │   • Voice Memos     │   │
+│  │   • Your Role Reminder   │  │   • System Narration │  │
 │  │   • Active Action Prompt │  │                     │   │
 │  │   • Relevant Buttons     │  │                     │   │
 │  │                          │  │                     │   │
@@ -876,8 +876,7 @@ app/game/[gameId]/page.tsx
 │   │       └── PlayerGrid (responsive)
 │   │
 │   └── ChatSidebarColumn (desktop) / ChatBottomSheet (mobile)
-│       ├── ChatPanel
-│       └── VoiceMemoPanel
+│       └── ChatPanel
 │
 └── GameModals
     ├── GameSettingsModal (lobby)

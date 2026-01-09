@@ -1,13 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import {
-  AudioLinesIcon,
-  BadgeCheckIcon,
-  GaugeIcon,
-  LockIcon,
-  MessagesSquareIcon,
-  UsersIcon,
-} from "lucide-react";
+import { BadgeCheckIcon, GaugeIcon, LayoutDashboardIcon, LockIcon, MessagesSquareIcon, UsersIcon } from "lucide-react";
 
 const features = [
   {
@@ -26,9 +19,9 @@ const features = [
     icon: MessagesSquareIcon,
   },
   {
-    title: "Voice Memos",
-    description: "Drop quick voice notes directly in the lobby and let the drama unfold asynchronously.",
-    icon: AudioLinesIcon,
+    title: "Guided Phases",
+    description: "Hosts advance the story with structured night actions, moderated defenses, and day votes.",
+    icon: LayoutDashboardIcon,
   },
   {
     title: "Player Safety",

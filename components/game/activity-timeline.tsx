@@ -87,7 +87,7 @@ function EventCard({ event }: { event: GameEvent }) {
 }
 
 function GameStartedEvent({ event }: { event: GameEvent }) {
-  const data = event.data as GameStartedEventData;
+  const data = event.data as unknown as GameStartedEventData;
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
@@ -103,7 +103,7 @@ function GameStartedEvent({ event }: { event: GameEvent }) {
 }
 
 function NightOutcomeEvent({ event }: { event: GameEvent }) {
-  const data = event.data as NightOutcomeEventData;
+  const data = event.data as unknown as NightOutcomeEventData;
   const savedByDoctor = data.savedByDoctor ?? false;
 
   return (
@@ -135,7 +135,7 @@ function NightOutcomeEvent({ event }: { event: GameEvent }) {
 }
 
 function DayEliminationEvent({ event }: { event: GameEvent }) {
-  const data = event.data as DayEliminationEventData;
+  const data = event.data as unknown as DayEliminationEventData;
 
   return (
     <div className="space-y-2">
@@ -159,7 +159,7 @@ function DayEliminationEvent({ event }: { event: GameEvent }) {
 }
 
 function VoteCastEvent({ event }: { event: GameEvent }) {
-  const data = event.data as VoteCastEventData;
+  const data = event.data as unknown as VoteCastEventData;
 
   return (
     <div className="space-y-1">
@@ -175,7 +175,7 @@ function VoteCastEvent({ event }: { event: GameEvent }) {
 }
 
 function VoteChangedEvent({ event }: { event: GameEvent }) {
-  const data = event.data as VoteChangedEventData;
+  const data = event.data as unknown as VoteChangedEventData;
 
   return (
     <div className="space-y-1">
@@ -192,7 +192,7 @@ function VoteChangedEvent({ event }: { event: GameEvent }) {
 }
 
 function DetectiveRevealedEvent({ event }: { event: GameEvent }) {
-  const data = event.data as DetectiveRevealedEventData;
+  const data = event.data as unknown as DetectiveRevealedEventData;
 
   return (
     <div className="space-y-2">
@@ -214,7 +214,7 @@ function DetectiveRevealedEvent({ event }: { event: GameEvent }) {
 }
 
 function PhaseChangedEvent({ event }: { event: GameEvent }) {
-  const data = event.data as PhaseChangedEventData;
+  const data = event.data as unknown as PhaseChangedEventData;
   const phaseEmoji = data.newPhase === "night" ? "🌙" : data.newPhase === "day" ? "☀️" : "🎭";
 
   return (

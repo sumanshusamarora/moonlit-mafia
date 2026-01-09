@@ -6,7 +6,7 @@ const tips = [
   {
     title: "Before nightfall",
     points: [
-      "Pick a voice channel or keep everyone in the in-app chat if you prefer text-only rounds.",
+      "Pick a voice call or keep everyone in the in-app chat if you prefer text-only rounds.",
       "Share the lobby code in your group chat or drop a one-click invite link from the dashboard.",
       "Double-check everyone is marked ready before starting. You can toggle players manually if needed.",
     ],
@@ -16,7 +16,7 @@ const tips = [
     points: [
       "Night and day phases auto-advance, but you can jump ahead manually from the host controls.",
       "Use system messages to narrate plot twists—players will see them highlighted in chat.",
-      "Encourage voice memos for secret confessions or asynchronous games across timezones.",
+      "Lean on the built-in narration prompts to keep everyone in sync without breaking immersion.",
     ],
   },
   {

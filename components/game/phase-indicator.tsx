@@ -7,7 +7,12 @@ interface PhaseIndicatorProps {
   round: number;
 }
 
-const PHASE_CONFIG = {
+const PHASE_CONFIG: Record<GamePhase, {
+  icon: string | typeof MoonIcon;
+  label: string;
+  bgColor: string;
+  textColor: string;
+}> = {
   lobby: {
     icon: "🎭",
     label: "LOBBY",
@@ -32,20 +37,24 @@ const PHASE_CONFIG = {
     bgColor: "bg-green-100 dark:bg-green-900/20",
     textColor: "text-green-900 dark:text-green-400",
   },
-} as const;
+};
 
 export function PhaseIndicator({ phase, round }: PhaseIndicatorProps) {
   const config = PHASE_CONFIG[phase];
-  const Icon = typeof config.icon === "string" ? null : config.icon;
+  const iconValue = config.icon;
+  const isStringIcon = typeof iconValue === "string";
 
   return (
     <div className={`rounded-lg border p-4 ${config.bgColor}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          {Icon ? (
-            <Icon className={`h-5 w-5 ${config.textColor}`} />
+          {isStringIcon ? (
+            <span className="text-xl">{iconValue}</span>
           ) : (
-            <span className="text-xl">{config.icon}</span>
+            (() => {
+              const IconComponent = iconValue;
+              return <IconComponent className={`h-5 w-5 ${config.textColor}`} />;
+            })()
           )}
           <span className={`text-lg font-bold uppercase tracking-wide ${config.textColor}`}>
             {config.label}

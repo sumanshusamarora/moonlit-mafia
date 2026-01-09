@@ -18,7 +18,6 @@ export const roleConfigSchema = z.object({
 
 export const gameConfigSchema = z.object({
   maxPlayers: z.number().int().min(4).max(16),
-  enableVoice: z.boolean(),
   enableAnonymousVotes: z.boolean(),
   revealRolesOnDeath: z.boolean(),
   dayDurationMinutes: z.number().int().min(1).max(30),

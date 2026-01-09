@@ -18,14 +18,7 @@ import {
   where,
   type Unsubscribe,
 } from "firebase/firestore";
-import {
-  deleteObject,
-  getDownloadURL,
-  ref,
-  uploadBytes,
-  type UploadResult,
-} from "firebase/storage";
-import { ensureAnonymousAuth, getFirebaseFirestore, getFirebaseStorage } from "@/lib/firebase/client";
+import { ensureAnonymousAuth, getFirebaseFirestore } from "@/lib/firebase/client";
 import { ROLE_DEFINITIONS } from "./roles";
 import { generateGameCode } from "./utils";
 import { recordGameEvent } from "./events";
@@ -35,7 +28,6 @@ import type {
   DetectiveResult,
   GameMessage,
   GameRole,
-  GameVoiceMemo,
   JoinGamePayload,
   MafiaGame,
   NightStage,
@@ -44,14 +36,11 @@ import type {
   VoteState,
 } from "@/types/game";
 import { joinGameSchema, createGameSchema } from "./schemas";
-import { nanoid } from "nanoid";
 
 const GAMES_COLLECTION = "games";
 const MESSAGES_SUBCOLLECTION = "messages";
-const VOICE_SUBCOLLECTION = "voiceMemos";
 
 const db = getFirebaseFirestore();
-const storage = getFirebaseStorage();
 
 const createInitialNightState = (stage: NightStage = "idle"): NightState => {
   const now = Date.now();
@@ -244,23 +233,9 @@ export const listenToMessages = (
   const q = query(messagesRef, orderBy("createdAt", "asc"));
   return onSnapshot(q, (snapshot) => {
     const messages: GameMessage[] = snapshot.docs.map((docSnapshot) => {
-      return { id: docSnapshot.id, ...(docSnapshot.data() as GameMessage) };
+      return docSnapshot.data() as GameMessage;
     });
     onChange(messages);
-  });
-};
-
-export const listenToVoiceMemos = (
-  gameId: string,
-  onChange: (memos: GameVoiceMemo[]) => void
-): Unsubscribe => {
-  const voiceRef = collection(db, GAMES_COLLECTION, gameId, VOICE_SUBCOLLECTION);
-  const q = query(voiceRef, orderBy("createdAt", "desc"));
-  return onSnapshot(q, (snapshot) => {
-    const memos: GameVoiceMemo[] = snapshot.docs
-      .map((docSnapshot) => ({ id: docSnapshot.id, ...(docSnapshot.data() as GameVoiceMemo & { deleted?: boolean }) }))
-      .filter((memo) => !memo.deleted);
-    onChange(memos);
   });
 };
 
@@ -416,14 +391,18 @@ export const startGame = async (gameId: string) => {
         detectiveRevealed: false,
       };
     }
-    const {
-      detectiveChecksRemaining: _detectiveChecksRemaining,
-      detectiveRevealed: _detectiveRevealed,
-      ...rest
-    } = player;
-    void _detectiveChecksRemaining;
-    void _detectiveRevealed;
-    return rest;
+    // Only attempt to remove detective fields if player has a role
+    if (player.role && "detectiveChecksRemaining" in player) {
+      const {
+        detectiveChecksRemaining: _detectiveChecksRemaining,
+        detectiveRevealed: _detectiveRevealed,
+        ...rest
+      } = player as typeof player & { detectiveChecksRemaining?: number | null; detectiveRevealed?: boolean };
+      void _detectiveChecksRemaining;
+      void _detectiveRevealed;
+      return rest;
+    }
+    return player;
   });
 
   await updateDoc(gameRef, {
@@ -846,62 +825,6 @@ export const skipDetectiveInvestigation = async (gameId: string, detectiveUid: s
   await resolveNight(gameId);
 };
 
-export const revealDetective = async (gameId: string, detectiveUid: string) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
-  let announcement: string | null = null;
-  let phase: MafiaGame["phase"] = "lobby";
-
-  await runTransaction(db, async (transaction) => {
-    const snapshot = await transaction.get(gameRef);
-    if (!snapshot.exists()) {
-      throw new Error("Game not found");
-    }
-
-    const game = snapshot.data() as MafiaGame;
-    phase = game.phase;
-
-    const players = [...game.players];
-    const detectiveIndex = players.findIndex((player) => player.uid === detectiveUid);
-    if (detectiveIndex === -1) {
-      throw new Error("Detective not part of this lobby.");
-    }
-
-    const actor = players[detectiveIndex];
-    if (!actor.isAlive) {
-      throw new Error("Only living players can reveal their role.");
-    }
-    if (actor.role !== "detective") {
-      throw new Error("You are no longer the detective.");
-    }
-
-    const {
-      detectiveChecksRemaining: _detectiveChecksRemaining,
-      detectiveRevealed: _detectiveRevealed,
-      ...rest
-    } = actor;
-    void _detectiveChecksRemaining;
-    void _detectiveRevealed;
-
-    players[detectiveIndex] = {
-      ...rest,
-      role: "villager",
-      detectiveRevealed: true,
-      detectiveChecksRemaining: 0,
-    };
-
-    announcement = `${actor.name} revealed themselves as the detective and forfeited remaining investigations.`;
-
-    transaction.update(gameRef, {
-      players,
-      lastAction: `${actor.name} revealed their identity`,
-    });
-  });
-
-  if (announcement) {
-    await recordSystemMessage(gameId, announcement, phase);
-  }
-};
-
 export const resolveNight = async (gameId: string) => {
   const gameRef = doc(db, GAMES_COLLECTION, gameId);
   let message: string | null = null;
@@ -972,14 +895,21 @@ export const resolveNight = async (gameId: string) => {
     messagePhase = "day";
   });
 
+  // Post the basic night outcome message
+  if (message) {
+    await recordSystemMessage(gameId, message, messagePhase);
+  }
+
   // Generate AI commentary for night events
   const gameData = (await getDoc(gameRef)).data() as MafiaGame;
   const eliminatedPlayer = gameData.players.find(p => p.name === eliminatedName);
+  const doctorSavedSomeone = !!(gameData.nightState?.doctorTargetUid && 
+                             gameData.nightState?.lockedTargetUid === gameData.nightState?.doctorTargetUid);
   
   const commentary = await generateNightCommentary({
     eliminatedName: eliminatedName || undefined,
-    eliminatedRole: eliminatedPlayer?.role,
-    savedByDoctor: savedUid && targetUid === savedUid,
+    eliminatedRole: (eliminatedPlayer?.role ?? undefined) as GameRole | undefined,
+    savedByDoctor: doctorSavedSomeone,
     round: gameData.round,
   });
 
@@ -1268,61 +1198,6 @@ export const syncPhaseDeadline = async (gameId: string, targetTimestamp: number,
     phaseEndsAt: targetTimestamp,
     lastAction: note ?? "Phase timer updated",
   });
-};
-
-export const uploadVoiceMemo = async (
-  gameId: string,
-  file: File,
-  ownerUid: string,
-  ownerName: string,
-  durationMs: number
-) => {
-  const id = nanoid();
-  const storagePath = `games/${gameId}/voice/${id}.webm`;
-  const storageRef = ref(storage, storagePath);
-  let upload: UploadResult;
-  try {
-    upload = await uploadBytes(storageRef, file, {
-      contentType: file.type,
-    });
-  } catch (error) {
-    console.error("Failed to upload voice memo", error);
-    throw error;
-  }
-
-  const url = await getDownloadURL(upload.ref);
-
-  const memo: Omit<GameVoiceMemo, "id"> = {
-    gameId,
-    storagePath,
-    ownerUid,
-    ownerName,
-    createdAt: Date.now(),
-    durationMs,
-    url,
-  };
-
-  const voiceCollection = collection(db, GAMES_COLLECTION, gameId, VOICE_SUBCOLLECTION);
-  await addDoc(voiceCollection, memo);
-  return memo;
-};
-
-export const deleteVoiceMemo = async (gameId: string, memoId: string, storagePath: string) => {
-  const voiceCollection = collection(db, GAMES_COLLECTION, gameId, VOICE_SUBCOLLECTION);
-  const memoRef = doc(voiceCollection, memoId);
-  await deleteObject(ref(storage, storagePath)).catch(() => undefined);
-  await deleteDoc(memoRef);
-};
-
-export const gameByCode = async (code: string): Promise<MafiaGame | null> => {
-  const snapshot = await getDocs(
-    query(collection(db, GAMES_COLLECTION), where("code", "==", code), limit(1))
-  );
-  if (snapshot.empty) {
-    return null;
-  }
-  const docSnapshot = snapshot.docs[0];
-  return { id: docSnapshot.id, ...(docSnapshot.data() as MafiaGame) };
 };
 
 export const recordSystemMessage = async (

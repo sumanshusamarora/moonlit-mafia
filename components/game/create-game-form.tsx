@@ -149,14 +149,6 @@ export function CreateGameForm() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Voice memos</Label>
-              <Switch
-                checked={form.watch("config.enableVoice")}
-                onCheckedChange={(checked) => form.setValue("config.enableVoice", checked, { shouldDirty: true })}
-              />
-              <p className="text-xs text-muted-foreground">Allow players to drop 60-second voice notes.</p>
-            </div>
-            <div className="space-y-2">
               <Label>Anonymous voting</Label>
               <Switch
                 checked={form.watch("config.enableAnonymousVotes")}

@@ -7,7 +7,6 @@ import {
   type Auth,
 } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
-import { getStorage, type FirebaseStorage } from "firebase/storage";
 import { firebaseConfig } from "./config";
 
 let app = getApps()[0];
@@ -18,7 +17,6 @@ if (!app) {
 
 let auth: Auth | undefined;
 let db: Firestore | undefined;
-let storage: FirebaseStorage | undefined;
 
 export const getFirebaseAuth = () => {
   if (auth) {
@@ -35,14 +33,6 @@ export const getFirebaseFirestore = () => {
   }
   db = getFirestore(app);
   return db;
-};
-
-export const getFirebaseStorage = () => {
-  if (storage) {
-    return storage;
-  }
-  storage = getStorage(app);
-  return storage;
 };
 
 export const ensureAnonymousAuth = async () => {

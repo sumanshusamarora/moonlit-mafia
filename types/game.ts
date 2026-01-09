@@ -49,7 +49,6 @@ export interface RoleConfig {
 
 export interface GameConfig {
   maxPlayers: number;
-  enableVoice: boolean;
   enableAnonymousVotes: boolean;
   revealRolesOnDeath: boolean;
   dayDurationMinutes: number;
@@ -76,18 +75,6 @@ export interface VoteState {
   targetUid: string;
   voterUid: string;
   createdAt: number;
-}
-
-export interface GameVoiceMemo {
-  id: string;
-  gameId: string;
-  storagePath: string;
-  url?: string;
-  ownerUid: string;
-  ownerName: string;
-  createdAt: number;
-  durationMs: number;
-  deleted?: boolean;
 }
 
 export interface GameMessage {
