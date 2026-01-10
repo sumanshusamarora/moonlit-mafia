@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useImperativeHandle, forwardRef } from "react";
 import { Button } from "@/components/ui/button";
 import { PlayIcon, PauseIcon, Volume2Icon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -11,7 +11,12 @@ interface VoicePlayerProps {
   authorName: string;
 }
 
-export function VoicePlayer({ voiceUrl, duration, authorName }: VoicePlayerProps) {
+export interface VoicePlayerRef {
+  play: () => Promise<void>;
+}
+
+export const VoicePlayer = forwardRef<VoicePlayerRef, VoicePlayerProps>(
+  function VoicePlayer({ voiceUrl, duration, authorName }, ref) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
@@ -44,6 +49,18 @@ export function VoicePlayer({ voiceUrl, duration, authorName }: VoicePlayerProps
     };
   }, [voiceUrl]);
 
+  const play = async () => {
+    if (!audioRef.current || isPlaying) return;
+    
+    try {
+      await audioRef.current.play();
+      setIsPlaying(true);
+    } catch (error) {
+      console.error("Failed to play audio:", error);
+      throw error;
+    }
+  };
+
   const togglePlayPause = () => {
     if (!audioRef.current) return;
 
@@ -51,12 +68,16 @@ export function VoicePlayer({ voiceUrl, duration, authorName }: VoicePlayerProps
       audioRef.current.pause();
       setIsPlaying(false);
     } else {
-      audioRef.current.play().catch((error) => {
+      play().catch((error) => {
         console.error("Failed to play audio:", error);
       });
-      setIsPlaying(true);
     }
   };
+
+  // Expose play method via ref for auto-play
+  useImperativeHandle(ref, () => ({
+    play,
+  }));
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -105,4 +126,4 @@ export function VoicePlayer({ voiceUrl, duration, authorName }: VoicePlayerProps
       </div>
     </div>
   );
-}
+});

@@ -16,6 +16,7 @@ import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { FloatingActionButton } from "@/components/ui/floating-action-button";
 import { useGameRoom } from "@/hooks/use-game-room";
 import { useAuth } from "@/components/providers/auth-provider";
+import { useUserSettings } from "@/hooks/use-user-settings";
 import { uploadVoiceMessage } from "@/lib/firebase/storage";
 import {
   advancePhase,
@@ -33,12 +34,14 @@ import {
 } from "@/lib/game/service";
 import { toast } from "sonner";
 import { Loader2Icon, MoonIcon, SunIcon, UsersIcon, MessageSquareIcon, ActivityIcon, SettingsIcon } from "lucide-react";
+import { SettingsPanel } from "@/components/game/settings-panel";
 
 export default function GameRoomPage() {
   const params = useParams<{ gameId: string }>();
   const gameId = params?.gameId;
   const { game, messages, loading } = useGameRoom(gameId ?? null);
   const { user } = useAuth();
+  const { settings } = useUserSettings();
   const [isBusy, setIsBusy] = useState(false);
   const [timerBusy, setTimerBusy] = useState(false);
   const [automationReadyEnabled, setAutomationReadyEnabled] = useState(false);
@@ -360,6 +363,7 @@ export default function GameRoomPage() {
   const tabs = [
     { id: "game", label: "Game", icon: <ActivityIcon className="h-4 w-4" />, badge: unreadMessages },
     { id: "players", label: "Players", icon: <UsersIcon className="h-4 w-4" />, badge: game.players.filter(p => p.isAlive).length },
+    { id: "settings", label: "Settings", icon: <SettingsIcon className="h-4 w-4" /> },
     ...(isHost ? [{ id: "host", label: "Host", icon: <SettingsIcon className="h-4 w-4" /> }] : []),
   ];
 
@@ -438,6 +442,7 @@ export default function GameRoomPage() {
                   onSendVoice={handleSendVoiceMessage}
                   phase={game.phase}
                   disabled={!viewer}
+                  autoplayEnabled={settings.autoplayVoiceMessages}
                 />
               </div>
             </div>
@@ -462,6 +467,13 @@ export default function GameRoomPage() {
                 />
               </CardContent>
             </Card>
+          </div>
+
+          {/* Settings Tab */}
+          <div data-tab="settings" className={activeTab === "settings" ? "block pb-20" : "hidden"}>
+            <div className="p-4">
+              <SettingsPanel />
+            </div>
           </div>
 
           {/* Host Controls Tab (if host) */}
@@ -658,7 +670,6 @@ export default function GameRoomPage() {
                 />
               </CardContent>
             </Card>
-            
             {/* Host Controls */}
             {isHost && (
               <Card>
@@ -799,6 +810,9 @@ export default function GameRoomPage() {
                 </CardContent>
               </Card>
             )}
+
+            {/* Settings Panel - Available to all users on desktop */}
+            <SettingsPanel />
           </aside>
 
           {/* Center Column: Action Center + Activity Timeline */}
@@ -815,6 +829,7 @@ export default function GameRoomPage() {
               onSendVoice={handleSendVoiceMessage}
               phase={game.phase}
               disabled={!viewer}
+              autoplayEnabled={settings.autoplayVoiceMessages}
             />
           </aside>
         </section>
