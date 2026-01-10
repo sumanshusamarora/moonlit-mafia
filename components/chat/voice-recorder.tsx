@@ -8,9 +8,10 @@ import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 interface VoiceRecorderProps {
   onRecordingReady: (audioBlob: Blob | null) => void;
   disabled?: boolean;
+  isSending?: boolean;
 }
 
-export function VoiceRecorder({ onRecordingReady, disabled }: VoiceRecorderProps) {
+export function VoiceRecorder({ onRecordingReady, disabled, isSending }: VoiceRecorderProps) {
   const isPressingRef = useRef<boolean>(false);
   
   const {
@@ -119,7 +120,7 @@ export function VoiceRecorder({ onRecordingReady, disabled }: VoiceRecorderProps
           size="sm"
           variant="ghost"
           onClick={deleteRecording}
-          disabled={disabled}
+          disabled={disabled || isSending}
           className="h-8 w-8 p-0"
           title="Delete recording"
         >
