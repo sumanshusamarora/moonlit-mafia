@@ -11,8 +11,10 @@ import { PlayerListCompact } from "@/components/game/player-list-compact";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { ActionCenter } from "@/components/game/action-center";
 import { ActivityTimeline } from "@/components/game/activity-timeline";
-import { MobileTabs, TabPanel } from "@/components/ui/tabs-mobile";
-import { CollapsibleSection } from "@/components/ui/collapsible-section";
+import { MobileGameLayout } from "@/components/ui/layout/MobileGameLayout";
+import { DesktopGameLayout } from "@/components/ui/layout/DesktopGameLayout";
+import { StatusPanel } from "@/components/ui/panels/StatusPanel";
+import { PlayerDrawer } from "@/components/ui/panels/PlayerDrawer";
 import { FloatingActionButton } from "@/components/ui/floating-action-button";
 import { useGameRoom } from "@/hooks/use-game-room";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -33,7 +35,7 @@ import {
   syncPhaseDeadline,
 } from "@/lib/game/service";
 import { toast } from "sonner";
-import { Loader2Icon, MoonIcon, SunIcon, UsersIcon, MessageSquareIcon, ActivityIcon, SettingsIcon } from "lucide-react";
+import { Loader2Icon, MoonIcon, SunIcon } from "lucide-react";
 import { SettingsPanel } from "@/components/game/settings-panel";
 import { AdminControlPanel } from "@/components/game/admin-control-panel";
 
@@ -46,7 +48,6 @@ export default function GameRoomPage() {
   const [isBusy, setIsBusy] = useState(false);
   const [timerBusy, setTimerBusy] = useState(false);
   const [automationReadyEnabled, setAutomationReadyEnabled] = useState(false);
-  const [activeTab, setActiveTab] = useState("game");
 
   const viewerId = user?.uid ?? "";
   const viewer = useMemo(() => game?.players.find((player) => player.uid === viewerId), [game, viewerId]);
@@ -55,11 +56,6 @@ export default function GameRoomPage() {
   const autoPhase = game?.phase ?? null;
   const autoViewerId = viewer?.uid ?? null;
   const autoViewerReady = viewer?.ready ?? false;
-  
-  const unreadMessages = useMemo(() => {
-    // Simple unread count - could be enhanced with localStorage tracking
-    return messages.filter(m => m.createdAt > (Date.now() - 60000)).length;
-  }, [messages]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -360,13 +356,6 @@ export default function GameRoomPage() {
   const timerControlsEnabled = isHost && (game.phase === "day" || game.phase === "night");
   const viewerIsDead = viewer ? !viewer.isAlive : false;
   const viewerRole = viewer?.role ?? null;
-  
-  const tabs = [
-    { id: "game", label: "Game", icon: <ActivityIcon className="h-4 w-4" />, badge: unreadMessages },
-    { id: "players", label: "Players", icon: <UsersIcon className="h-4 w-4" />, badge: game.players.filter(p => p.isAlive).length },
-    { id: "settings", label: "Settings", icon: <SettingsIcon className="h-4 w-4" /> },
-    ...(isHost ? [{ id: "host", label: "Host", icon: <SettingsIcon className="h-4 w-4" /> }] : []),
-  ];
 
   // Primary action for FAB
   const getPrimaryAction = () => {
@@ -422,250 +411,88 @@ export default function GameRoomPage() {
         </div>
       )}
 
-      {/* Mobile-First Tab Navigation (lg and below) */}
-      <div className="lg:hidden">
-        <MobileTabs 
-          tabs={tabs} 
-          activeTab={activeTab} 
-          onTabChange={setActiveTab}
-        >
-          {/* Game Tab - Combined Action + Chat */}
-          <div data-tab="game" className={activeTab === "game" ? "block pb-20" : "hidden"}>
-            <div className="space-y-4 p-4">
-              {/* Action Center */}
-              <ActionCenter 
-                game={game} 
-                viewerId={viewerId}
-                messages={messages}
-                onVote={handleVote}
-                onClearVote={handleClearVote}
-                onReadyToggle={handleReadyToggle}
-              />
-              
-              {/* Admin Control Panel in Test Mode */}
-              {game.isTestMode && isHost && <AdminControlPanel game={game} />}
-              
-              {/* Chat Panel */}
-              <div className="h-[400px]">
-                <ChatPanel
-                  messages={messages}
-                  onSend={handleSendMessage}
-                  onSendVoice={handleSendVoiceMessage}
-                  phase={game.phase}
-                  disabled={!viewer}
-                  autoplayEnabled={settings.autoplayVoiceMessages}
-                  game={game}
-                  viewerId={viewerId}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Players Tab */}
-          <div data-tab="players" className={activeTab === "players" ? "block pb-20" : "hidden"}>
-            <Card className="m-4">
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold">Players</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  {game.players.filter((p) => p.isAlive).length} alive • {game.players.length} total
-                </p>
-              </CardHeader>
-              <CardContent>
-                <PlayerListCompact
-                  players={game.players}
-                  viewerId={viewerId}
-                  viewerIsDead={viewerIsDead}
-                  revealDeadRoles={game.config.revealRolesOnDeath || game.phase === "ended"}
-                  viewerRole={viewerRole}
-                />
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Settings Tab */}
-          <div data-tab="settings" className={activeTab === "settings" ? "block pb-20" : "hidden"}>
-            <div className="p-4">
-              <SettingsPanel />
-            </div>
-          </div>
-
-          {/* Host Controls Tab (if host) */}
-          {isHost && (
-            <div data-tab="host" className={activeTab === "host" ? "block pb-20" : "hidden"}>
-              <div className="space-y-4 p-4">
-                <CollapsibleSection title="Game Controls" defaultOpen={true}>
-                  <div className="space-y-2">
-                    {game.phase === "lobby" && (
-                      <Button
-                        size="sm"
-                        className="w-full"
-                        onClick={handleStart}
-                        disabled={!everyoneReady || isBusy}
-                        data-testid="start-game-button"
-                      >
-                        {isBusy ? "Starting..." : "Start game"}
-                      </Button>
-                    )}
-                    
-                    {/* Day Elimination Control */}
-                    {game.phase === "day" && 
-                     game.dayEliminationState?.votingComplete && 
-                     !game.dayEliminationState.eliminated &&
-                     game.dayEliminationState.leadingCandidateUid && (
-                      <div className="space-y-2 rounded-lg border border-destructive/50 bg-destructive/5 p-3">
-                        <p className="text-xs font-medium text-destructive">
-                          Elimination Required
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {game.dayEliminationState.leadingCandidateName} has {game.dayEliminationState.leadingVoteCount} votes
-                        </p>
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          className="w-full"
-                          onClick={() => handleEliminate(game.dayEliminationState!.leadingCandidateUid!)}
-                          disabled={isBusy}
-                        >
-                          Eliminate {game.dayEliminationState.leadingCandidateName}
-                        </Button>
-                      </div>
-                    )}
-                    
-                    {game.phase !== "ended" && game.phase !== "lobby" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full"
-                        onClick={handleAdvancePhase}
-                        disabled={
-                          (game.phase === "day" && 
-                           game.dayEliminationState?.votingComplete && 
-                           !game.dayEliminationState.eliminated) || 
-                          isBusy
-                        }
-                        data-testid="advance-phase-button"
-                      >
-                        {game.phase === "day" ? (
-                          <>
-                            <MoonIcon className="mr-2 h-4 w-4" aria-hidden />
-                            Enter night
-                          </>
-                        ) : (
-                          <>
-                            <SunIcon className="mr-2 h-4 w-4" aria-hidden />
-                            Enter day
-                          </>
-                        )}
-                      </Button>
-                    )}
-
-                    {game.phase === "ended" && (
-                      <div className="space-y-2 rounded-lg border border-primary/50 bg-primary/5 p-3">
-                        <p className="text-sm font-semibold text-primary">
-                          🏆 Game Ended
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {game.lastAction || "The game has concluded."}
-                        </p>
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          className="w-full" 
-                          onClick={handleArchive}
-                        >
-                          Archive Game
-                        </Button>
-                      </div>
-                    )}
-                    {game.phase !== "ended" && (
-                      <Button size="sm" variant="outline" className="w-full" onClick={handleArchive}>
-                        Archive
-                      </Button>
-                    )}
-                  </div>
-                </CollapsibleSection>
-
-                <CollapsibleSection title="Timer Controls">
-                  {timerControlsEnabled && (
-                    <div className="space-y-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => handleExtendTimer(30000)}
-                        disabled={timerBusy}
-                      >
-                        Extend +30s
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full"
-                        onClick={handleResetTimer}
-                        disabled={timerBusy}
-                      >
-                        Reset Timer
-                      </Button>
-                    </div>
-                  )}
-                  {!timerControlsEnabled && (
-                    <p className="text-sm text-muted-foreground">
-                      Timer controls available during day/night phases
-                    </p>
-                  )}
-                </CollapsibleSection>
-
-                <CollapsibleSection title="Danger Zone">
-                  <div className="space-y-2">
-                    {game.phase !== "ended" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full border-destructive/50 text-destructive hover:border-destructive hover:bg-destructive/10"
-                        onClick={handlePeekRoles}
-                        disabled={isBusy}
-                        data-testid="peek-roles-button"
-                      >
-                        Peek at roles
-                      </Button>
-                    )}
-                  </div>
-                </CollapsibleSection>
-
-                <CollapsibleSection title="Activity Timeline">
-                  <ActivityTimeline gameId={game.id} />
-                </CollapsibleSection>
-              </div>
-            </div>
-          )}
-
-          {/* Activity Tab (non-host) */}
-          {!isHost && (
-            <div data-tab="activity" className={activeTab === "activity" ? "block pb-20" : "hidden"}>
-              <div className="p-4">
-                <ActivityTimeline gameId={game.id} />
-              </div>
-            </div>
-          )}
-        </MobileTabs>
-
-        {/* Floating Action Button for primary actions */}
-        {primaryAction && (
-          <FloatingActionButton
-            label={primaryAction.label}
-            onClick={primaryAction.onClick}
-            variant={primaryAction.variant}
+      {/* New Mobile Layout - No Tabs, Integrated View */}
+      <MobileGameLayout
+        header={
+          <>
+            <StatusPanel 
+              phase={game.phase}
+              round={game.round}
+              role={viewerRole}
+              isAlive={viewer?.isAlive}
+              isRevealed={viewer?.detectiveRevealed}
+            />
+            <Badge variant="secondary" className="shrink-0">
+              {game.code}
+            </Badge>
+          </>
+        }
+        actionContent={
+          <>
+            <ActionCenter 
+              game={game} 
+              viewerId={viewerId}
+              messages={messages}
+              onVote={handleVote}
+              onClearVote={handleClearVote}
+              onReadyToggle={handleReadyToggle}
+            />
+            {game.isTestMode && isHost && <AdminControlPanel game={game} />}
+          </>
+        }
+        chatContent={
+          <ChatPanel
+            messages={messages}
+            onSend={handleSendMessage}
+            onSendVoice={handleSendVoiceMessage}
+            phase={game.phase}
+            disabled={!viewer}
+            autoplayEnabled={settings.autoplayVoiceMessages}
+            game={game}
+            viewerId={viewerId}
           />
-        )}
-      </div>
+        }
+        playerDrawer={
+          <PlayerDrawer
+            players={game.players}
+            viewerId={viewerId}
+            showRoles={viewerIsDead || game.phase === "ended"}
+          />
+        }
+        fab={
+          primaryAction && (
+            <FloatingActionButton
+              label={primaryAction.label}
+              onClick={primaryAction.onClick}
+              variant={primaryAction.variant}
+            />
+          )
+        }
+        isTestMode={game.isTestMode}
+        actionHeightMode={game.phase === "night" && !viewer?.isAlive ? "minimal" : "auto"}
+      />
 
-      {/* Desktop Layout (lg and above) */}
-      <div className="hidden space-y-6 lg:block">
-        {/* New Layout: 3-column grid on desktop */}
-        <section className="grid gap-6 lg:grid-cols-[300px,1fr] xl:grid-cols-[300px,1fr,380px]">
-          
-          {/* Left Column: Players + Host Controls (Sticky) */}
-          <aside className="space-y-6">
+      {/* Desktop Layout - Using new component */}
+      <DesktopGameLayout
+        header={
+          <>
+            <StatusPanel 
+              phase={game.phase}
+              round={game.round}
+              role={viewerRole}
+              isAlive={viewer?.isAlive}
+              isRevealed={viewer?.detectiveRevealed}
+            />
+            <Badge variant="secondary">
+              Code: {game.code}
+            </Badge>
+            <Button size="sm" variant="outline" onClick={copyCode}>
+              Copy code
+            </Button>
+          </>
+        }
+        leftColumn={
+          <>
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm font-semibold">Players</CardTitle>
@@ -683,6 +510,7 @@ export default function GameRoomPage() {
                 />
               </CardContent>
             </Card>
+            
             {/* Host Controls */}
             {isHost && (
               <Card>
@@ -824,32 +652,38 @@ export default function GameRoomPage() {
               </Card>
             )}
 
-            {/* Settings Panel - Available to all users on desktop */}
+            {/* Settings Panel */}
             <SettingsPanel />
-          </aside>
-
-          {/* Center Column: Action Center + Admin Panel + Activity Timeline */}
-          <div className="space-y-6">
-            <ActionCenter game={game} viewerId={viewerId} messages={messages} onVote={handleVote} onClearVote={handleClearVote} onReadyToggle={handleReadyToggle} />
+          </>
+        }
+        centerColumn={
+          <>
+            <ActionCenter 
+              game={game} 
+              viewerId={viewerId} 
+              messages={messages} 
+              onVote={handleVote} 
+              onClearVote={handleClearVote} 
+              onReadyToggle={handleReadyToggle} 
+            />
             {game.isTestMode && isHost && <AdminControlPanel game={game} />}
             <ActivityTimeline gameId={game.id} />
-          </div>
-
-          {/* Right Column: Chat (Desktop only, hidden on mobile/tablet) */}
-          <aside className="hidden space-y-6 xl:block">
-            <ChatPanel
-              messages={messages}
-              onSend={handleSendMessage}
-              onSendVoice={handleSendVoiceMessage}
-              phase={game.phase}
-              disabled={!viewer}
-              autoplayEnabled={settings.autoplayVoiceMessages}
-              game={game}
-              viewerId={viewerId}
-            />
-          </aside>
-        </section>
-      </div>
+          </>
+        }
+        rightColumn={
+          <ChatPanel
+            messages={messages}
+            onSend={handleSendMessage}
+            onSendVoice={handleSendVoiceMessage}
+            phase={game.phase}
+            disabled={!viewer}
+            autoplayEnabled={settings.autoplayVoiceMessages}
+            game={game}
+            viewerId={viewerId}
+          />
+        }
+        isTestMode={game.isTestMode}
+      />
     </AppShell>
   );
 }
