@@ -23,18 +23,27 @@ export function VoiceRecorder({ onRecordingReady, disabled }: VoiceRecorderProps
     error,
   } = useVoiceRecorder();
 
+  // Use ref to track recording state for event handlers
+  const isRecordingRef = useRef<boolean>(false);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
   // Notify parent when audio blob changes
   useEffect(() => {
     onRecordingReady(audioBlob);
   }, [audioBlob, onRecordingReady]);
 
   // Global release handlers - catch mouseup/touchend anywhere on the page
+  // Using ref to avoid recreating this callback when isRecording changes
   const handleGlobalRelease = useCallback(() => {
     isPressingRef.current = false;
-    if (isRecording) {
+    if (isRecordingRef.current) {
       stopRecording();
     }
-  }, [isRecording, stopRecording]);
+  }, [stopRecording]);
 
   useEffect(() => {
     window.addEventListener('mouseup', handleGlobalRelease);

@@ -34,6 +34,13 @@ export function useVoiceRecorder(
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const recordingTimeRef = useRef<number>(0);
+  const isRecordingRef = useRef<boolean>(false);
+
+  // Helper to check if MediaRecorder is active
+  const isRecorderActive = (recorder: MediaRecorder | null): boolean => {
+    return recorder !== null && 
+           (recorder.state === "recording" || recorder.state === "paused");
+  };
 
   // Cleanup function - stops all recording activity and releases resources
   const cleanup = useCallback(() => {
@@ -41,11 +48,9 @@ export function useVoiceRecorder(
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    if (mediaRecorderRef.current && 
-        (mediaRecorderRef.current.state === "recording" || 
-         mediaRecorderRef.current.state === "paused")) {
+    if (isRecorderActive(mediaRecorderRef.current)) {
       try {
-        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current!.stop();
       } catch (err) {
         console.error("Error stopping MediaRecorder:", err);
       }
@@ -92,6 +97,7 @@ export function useVoiceRecorder(
         const duration = recordingTimeRef.current;
         setAudioBlob(blob);
         setIsRecording(false);
+        isRecordingRef.current = false;
 
         // Stop the stream tracks
         if (streamRef.current) {
@@ -116,11 +122,13 @@ export function useVoiceRecorder(
         setError("Recording failed");
         cleanup();
         setIsRecording(false);
+        isRecordingRef.current = false;
       };
 
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start();
       setIsRecording(true);
+      isRecordingRef.current = true;
       setRecordingTime(0);
       recordingTimeRef.current = 0;
 
@@ -145,8 +153,9 @@ export function useVoiceRecorder(
   }, [isRecording, audioBlob, maxDuration, onRecordingComplete, cleanup]);
 
   const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop();
+    const recorder = mediaRecorderRef.current;
+    if (recorder && (recorder.state === "recording" || recorder.state === "paused")) {
+      recorder.stop();
       // Note: cleanup happens in onstop handler
     }
   }, []);
