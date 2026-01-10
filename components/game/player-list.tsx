@@ -65,7 +65,8 @@ export function PlayerList({
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     {player.isHost && <Badge variant="secondary">Host</Badge>}
-                    {!player.isAlive && <Badge variant="destructive">Eliminated</Badge>}
+                    {player.isSpectator && <Badge variant="outline" className="border-purple-500/50 text-purple-600 dark:text-purple-400">👻 Spectator</Badge>}
+                    {!player.isAlive && !player.isSpectator && <Badge variant="destructive">Eliminated</Badge>}
                     {showRole && player.role && (
                       <Tooltip>
                         <TooltipTrigger asChild>

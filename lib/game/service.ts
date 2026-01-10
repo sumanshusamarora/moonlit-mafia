@@ -220,20 +220,34 @@ export const joinGameByCode = async (payload: JoinGamePayload) => {
     return { ...gameData, playerIds };
   }
 
+  // Check if game has started - if so, join as ghost viewer
+  const isGameStarted = gameData.status === "in-progress" || gameData.phase !== "lobby";
+  const isGameFinished = gameData.status === "completed" || gameData.phase === "ended";
+
   const joinPayload = {
     uid: user.uid,
     name: parsed.name,
-    role: null,
-    isAlive: true,
+    role: isGameStarted || isGameFinished ? null : null, // Ghost viewers get no role
+    isAlive: isGameStarted || isGameFinished ? false : true, // Ghost viewers marked as not alive
     isHost: false,
     joinedAt: Date.now(),
     ready: false,
+    isSpectator: isGameStarted || isGameFinished ? true : undefined, // Mark as spectator if joining mid-game or after game ends
   };
 
   await updateDoc(gameDoc.ref, {
     players: arrayUnion(joinPayload),
     playerIds: arrayUnion(user.uid),
   });
+
+  // Post system message if joining as ghost viewer
+  if (isGameStarted || isGameFinished) {
+    await recordSystemMessage(
+      gameDoc.id,
+      `${parsed.name} joined as a spectator.`,
+      gameData.phase
+    );
+  }
 
   return {
     ...gameData,
@@ -562,10 +576,12 @@ export const restartLobby = async (gameId: string, hostUid: string) => {
       const {
         detectiveChecksRemaining: _detectiveChecksRemaining,
         detectiveRevealed: _detectiveRevealed,
+        isSpectator: _isSpectator,
         ...rest
       } = player;
       void _detectiveChecksRemaining;
       void _detectiveRevealed;
+      void _isSpectator;
       return {
         ...rest,
         role: null,
@@ -1011,8 +1027,8 @@ export const submitVote = async (
   const votes = [...(game.votes ?? [])].filter((entry) => entry.voterUid !== vote.voterUid);
   votes.push(vote);
 
-  // Check if all alive players have voted
-  const alivePlayers = game.players.filter((p) => p.isAlive);
+  // Check if all alive players have voted (excluding spectators)
+  const alivePlayers = game.players.filter((p) => p.isAlive && !p.isSpectator);
   const alivePlayerUids = alivePlayers.map((p) => p.uid);
   const voterUids = votes.map((v) => v.voterUid);
   const allVoted = alivePlayerUids.every((uid) => voterUids.includes(uid));
@@ -1221,8 +1237,8 @@ export const checkWinCondition = async (gameId: string) => {
   if (!snapshot.exists()) return;
 
   const game = snapshot.data() as MafiaGame;
-  // Only count players with assigned roles (excludes players who weren't ready at game start)
-  const alivePlayers = game.players.filter((p) => p.isAlive && p.role !== null);
+  // Only count players with assigned roles (excludes players who weren't ready at game start and spectators)
+  const alivePlayers = game.players.filter((p) => p.isAlive && p.role !== null && !p.isSpectator);
   const aliveMafia = alivePlayers.filter((p) => p.role === "mafia");
   // All non-mafia roles count as village (doctor, detective, villager)
   const aliveVillage = alivePlayers.filter((p) => p.role !== "mafia");
