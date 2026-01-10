@@ -126,6 +126,43 @@ export const createGame = async (payload: CreateGamePayload) => {
   const gameRef = doc(collection(db, GAMES_COLLECTION));
 
   const now = Date.now();
+  const isTestMode = parsed.isTestMode ?? false;
+  const testPlayerCount = parsed.testPlayerCount ?? 0;
+
+  // Create initial players array with host
+  const players: MafiaGame["players"] = [
+    {
+      uid: user.uid,
+      name: parsed.hostName,
+      role: null,
+      isAlive: true,
+      isHost: true,
+      joinedAt: now,
+      ready: true,
+      isTestPlayer: false,
+    },
+  ];
+
+  const playerIds = [user.uid];
+
+  // Add test players if test mode is enabled
+  if (isTestMode && testPlayerCount > 0) {
+    for (let i = 1; i <= testPlayerCount; i++) {
+      const testPlayerUid = `test_player_${i}`;
+      players.push({
+        uid: testPlayerUid,
+        name: `Test Player ${i}`,
+        role: null,
+        isAlive: true,
+        isHost: false,
+        joinedAt: now,
+        ready: true,
+        isTestPlayer: true,
+      });
+      playerIds.push(testPlayerUid);
+    }
+  }
+
   const game: MafiaGame = {
     id: gameRef.id,
     code,
@@ -137,20 +174,11 @@ export const createGame = async (payload: CreateGamePayload) => {
     status: "waiting",
     phaseEndsAt: null,
     config: parsed.config,
-    players: [
-      {
-        uid: user.uid,
-        name: parsed.hostName,
-        role: null,
-        isAlive: true,
-        isHost: true,
-        joinedAt: now,
-        ready: true,
-      },
-    ],
-    playerIds: [user.uid],
+    players,
+    playerIds,
     hostPeeked: false,
     nightState: createInitialNightState(),
+    isTestMode,
   };
 
   await setDoc(gameRef, game);
@@ -178,6 +206,11 @@ export const joinGameByCode = async (payload: JoinGamePayload) => {
   const gameDoc = snapshot.docs[0];
   const gameData = gameDoc.data() as MafiaGame;
   const playerIds = gameData.playerIds ?? gameData.players.map((player) => player.uid);
+
+  // Prevent real players from joining test mode games
+  if (gameData.isTestMode) {
+    throw new Error("This is a test lobby and cannot be joined by other players");
+  }
 
   if (gameData.players.length >= gameData.config.maxPlayers) {
     throw new Error("Game is full");
@@ -360,6 +393,10 @@ export const startGame = async (gameId: string) => {
 
   const shuffledRoles = shuffleArray(rolePool);
 
+  // In test mode, force admin to be Mafia
+  const isTestMode = game.isTestMode ?? false;
+  const hostId = game.hostId;
+
   const assignedPlayers = game.players.map((player) => {
     const {
       detectiveChecksRemaining: _detectiveChecksRemaining,
@@ -371,6 +408,17 @@ export const startGame = async (gameId: string) => {
     if (!player.ready) {
       return { ...rest, role: null, isAlive: true };
     }
+    
+    // In test mode, assign Mafia to admin
+    if (isTestMode && player.uid === hostId) {
+      // Find and remove a Mafia role from the pool
+      const mafiaIndex = shuffledRoles.findIndex(r => r === "mafia");
+      if (mafiaIndex !== -1) {
+        shuffledRoles.splice(mafiaIndex, 1);
+      }
+      return { ...rest, role: "mafia" as GameRole, isAlive: true };
+    }
+    
     const role = shuffledRoles.pop() ?? "villager";
     return { ...rest, role, isAlive: true };
   });
