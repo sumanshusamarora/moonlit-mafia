@@ -70,6 +70,7 @@ export interface GamePlayer {
   detectiveChecksRemaining?: number | null;
   detectiveRevealed?: boolean;
   isTestPlayer?: boolean;
+  isSpectator?: boolean;
 }
 
 export interface VoteState {

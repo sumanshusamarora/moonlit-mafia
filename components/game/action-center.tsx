@@ -72,10 +72,13 @@ export function ActionCenter({ game, viewerId, messages, onVote, onClearVote, on
 
     // Dead observer
     if (!viewerAlive && game.phase !== "day") {
+      const isSpectator = viewer.isSpectator ?? false;
       return (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            👻 You are eliminated and observing as a ghost.
+            👻 {isSpectator 
+                ? "You joined as a spectator and are observing the game."
+                : "You are eliminated and observing as a ghost."}
           </p>
           <p className="text-xs text-muted-foreground">
             You can see all roles revealed below.
@@ -136,10 +139,13 @@ export function ActionCenter({ game, viewerId, messages, onVote, onClearVote, on
     // Day phase
     if (game.phase === "day") {
       if (!viewerAlive) {
+        const isSpectator = viewer.isSpectator ?? false;
         return (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              👻 You are eliminated and observing as a ghost.
+              👻 {isSpectator
+                  ? "You joined as a spectator and are observing the game."
+                  : "You are eliminated and observing as a ghost."}
             </p>
           </div>
         );

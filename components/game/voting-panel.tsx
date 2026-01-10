@@ -26,6 +26,7 @@ export function VotingPanel({ game, viewerId, onVote, onClear, disabled }: Votin
   const isAnonymous = game.config.enableAnonymousVotes;
   const viewer = game.players.find((p) => p.uid === viewerId);
   const isViewerDead = viewer ? !viewer.isAlive : false;
+  const isViewerSpectator = viewer?.isSpectator ?? false;
   
   const voteData = votes.reduce<Record<string, { count: number; voters: string[] }>>((map, vote) => {
     if (!map[vote.targetUid]) {
@@ -36,7 +37,7 @@ export function VotingPanel({ game, viewerId, onVote, onClear, disabled }: Votin
     return map;
   }, {});
 
-  const alivePlayers = game.players.filter((player) => player.isAlive);
+  const alivePlayers = game.players.filter((player) => player.isAlive && !player.isSpectator);
   const voteCast = votes.length;
   const totalVoters = alivePlayers.length;
 
@@ -57,12 +58,14 @@ export function VotingPanel({ game, viewerId, onVote, onClear, disabled }: Votin
       <Card className="border border-dashed border-border/70 bg-background/60">
         <CardHeader>
           <CardTitle className="text-base">
-            {isViewerDead ? "👻 Night Phase (Observer)" : "Voting locked"}
+            {isViewerDead ? (isViewerSpectator ? "👻 Night Phase (Spectator)" : "👻 Night Phase (Observer)") : "Voting locked"}
           </CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground">
           {isViewerDead 
-            ? "You are observing as a ghost. Night actions are in progress."
+            ? (isViewerSpectator 
+                ? "You joined as a spectator. You can observe but cannot participate in the game."
+                : "You are observing as a ghost. Night actions are in progress.")
             : "Votes open again at sunrise. Coordinate night actions in private chat."}
         </CardContent>
       </Card>
@@ -75,7 +78,7 @@ export function VotingPanel({ game, viewerId, onVote, onClear, disabled }: Votin
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">
-              {isViewerDead ? "👻 Day Voting (Observer)" : "Day voting"}
+              {isViewerDead ? (isViewerSpectator ? "👻 Day Voting (Spectator)" : "👻 Day Voting (Observer)") : "Day voting"}
             </CardTitle>
             <Badge variant={voteCast === totalVoters ? "default" : "secondary"}>
               {voteCast}/{totalVoters} votes
@@ -85,7 +88,9 @@ export function VotingPanel({ game, viewerId, onVote, onClear, disabled }: Votin
         <CardContent className="space-y-3">
           {isViewerDead && (
             <div className="rounded-lg border border-muted bg-muted/20 p-3 text-sm text-muted-foreground">
-              👻 You are observing as a ghost. You can see all votes in real-time but cannot participate.
+              👻 {isViewerSpectator 
+                  ? "You joined as a spectator. You can observe all votes but cannot participate in voting."
+                  : "You are observing as a ghost. You can see all votes in real-time but cannot participate."}
             </div>
           )}
           {!isViewerDead && (

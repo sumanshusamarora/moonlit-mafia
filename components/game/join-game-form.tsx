@@ -30,9 +30,21 @@ export function JoinGameForm() {
     setIsSubmitting(true);
     try {
       const game = await joinGameByCode(values);
-      toast.success("Joined the lobby", {
-        description: `You are now in lobby ${game.code}.`,
-      });
+      
+      // Check if user joined as spectator
+      const currentUser = game.players.find(p => p.name === values.name);
+      const isSpectator = currentUser?.isSpectator ?? false;
+      
+      if (isSpectator) {
+        toast.info("Joined as Spectator", {
+          description: "This game is already in progress. You've joined as a spectator and can observe but not participate.",
+        });
+      } else {
+        toast.success("Joined the lobby", {
+          description: `You are now in lobby ${game.code}.`,
+        });
+      }
+      
       router.push(`/game/${game.id}`);
     } catch (error) {
       console.error(error);
