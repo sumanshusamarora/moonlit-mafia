@@ -28,9 +28,12 @@ interface ChatPanelProps {
   viewerId?: string | null;
 }
 
+type VoiceSendState = 'idle' | 'recorded' | 'sending';
+
 export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, autoplayEnabled = false, game, viewerId }: ChatPanelProps) {
   const [value, setValue] = useState("");
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
+  const [voiceSendState, setVoiceSendState] = useState<VoiceSendState>('idle');
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const voicePlayerRefs = useRef<Map<string, React.RefObject<VoicePlayerRef> | null>>(new Map());
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
@@ -80,8 +83,26 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
 
     // Send voice message if recorded
     if (voiceBlob && onSendVoice) {
-      await onSendVoice(voiceBlob);
+      // Guard against double execution
+      if (voiceSendState === 'sending') return;
+      
+      // Capture the blob before clearing state
+      const audioToSend = voiceBlob;
+      
+      // Immediately clear UI and set to sending state
+      setVoiceSendState('sending');
       setVoiceBlob(null);
+      
+      try {
+        await onSendVoice(audioToSend);
+      } catch (error) {
+        // Don't resurrect the blob on error - show toast instead
+        toast.error("Voice message failed to send");
+        console.error("Voice message send error:", error);
+      } finally {
+        // Reset to idle state
+        setVoiceSendState('idle');
+      }
       return;
     }
 
@@ -94,6 +115,12 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
 
   const handleRecordingReady = (audioBlob: Blob | null) => {
     setVoiceBlob(audioBlob);
+    // Update state when recording is ready
+    if (audioBlob) {
+      setVoiceSendState('recorded');
+    } else {
+      setVoiceSendState('idle');
+    }
   };
 
   const handleAIDefenseSend = async (text: string) => {
@@ -167,10 +194,11 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
                 <VoiceRecorder
                   onRecordingReady={handleRecordingReady}
                   disabled={disabled || !!value.trim()}
+                  isSending={voiceSendState === 'sending'}
                 />
               )}
             </div>
-            <Button type="submit" disabled={(!value.trim() && !voiceBlob) || disabled}>
+            <Button type="submit" disabled={(!value.trim() && !voiceBlob) || disabled || voiceSendState === 'sending'}>
               <SendIcon className="mr-2 h-4 w-4" aria-hidden />
               Send
             </Button>
