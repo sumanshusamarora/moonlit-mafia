@@ -130,8 +130,11 @@ export function useVoiceRecorder(
         setRecordingTime(recordingTimeRef.current);
         
         // Auto-stop if max duration reached
-        if (recordingTimeRef.current >= maxDuration && mediaRecorderRef.current?.state === "recording") {
-          mediaRecorderRef.current.stop();
+        if (recordingTimeRef.current >= maxDuration) {
+          const recorder = mediaRecorderRef.current;
+          if (recorder && recorder.state === "recording") {
+            recorder.stop();
+          }
         }
       }, 1000);
     } catch (err) {

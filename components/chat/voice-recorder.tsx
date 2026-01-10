@@ -34,8 +34,7 @@ export function VoiceRecorder({ onRecordingReady, disabled }: VoiceRecorderProps
     if (isRecording) {
       stopRecording();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRecording]); // stopRecording is stable from useVoiceRecorder hook
+  }, [isRecording, stopRecording]);
 
   useEffect(() => {
     window.addEventListener('mouseup', handleGlobalRelease);
@@ -57,8 +56,7 @@ export function VoiceRecorder({ onRecordingReady, disabled }: VoiceRecorderProps
     
     isPressingRef.current = true;
     startRecording();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [disabled, audioBlob, isRecording]); // startRecording is stable from useVoiceRecorder hook
+  }, [disabled, audioBlob, isRecording, startRecording]);
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
@@ -67,8 +65,7 @@ export function VoiceRecorder({ onRecordingReady, disabled }: VoiceRecorderProps
     if (isRecording) {
       stopRecording();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRecording]); // stopRecording is stable from useVoiceRecorder hook
+  }, [isRecording, stopRecording]);
 
   // Prevent accidental click events
   const handleClick = useCallback((e: React.MouseEvent) => {
