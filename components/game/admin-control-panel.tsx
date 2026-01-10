@@ -106,7 +106,7 @@ export function AdminControlPanel({ game }: AdminControlPanelProps) {
     }
   };
 
-  const alivePlayers = game.players.filter(p => p.isAlive && p.role !== null);
+  const alivePlayers = game.players.filter(p => p.isAlive && p.role !== null && !p.isSpectator);
   const currentVote = (playerUid: string) => 
     game.votes?.find(v => v.voterUid === playerUid);
 

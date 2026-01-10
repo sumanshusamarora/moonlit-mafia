@@ -15,7 +15,7 @@ export function DoctorActionPrompt({ game, viewerId }: DoctorActionPromptProps) 
   const [pendingTarget, setPendingTarget] = useState<string | null>(null);
   const nightState = game.nightState;
   const doctorTargetUid = nightState?.doctorTargetUid ?? null;
-  const alivePlayers = game.players.filter((player) => player.isAlive);
+  const alivePlayers = game.players.filter((player) => player.isAlive && !player.isSpectator);
 
   const handleDoctorSave = async (targetUid: string) => {
     setPendingTarget(targetUid);

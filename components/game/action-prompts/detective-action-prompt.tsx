@@ -26,7 +26,7 @@ export function DetectiveActionPrompt({
   const [isSkipping, setIsSkipping] = useState(false);
   const nightState = game.nightState;
   const detectiveResult = nightState?.detectiveResult ?? null;
-  const alivePlayers = game.players.filter((player) => player.isAlive && player.uid !== viewerId);
+  const alivePlayers = game.players.filter((player) => player.isAlive && player.uid !== viewerId && !player.isSpectator);
 
   // Get investigation history from events
   const { events } = useGameEvents(game.id);

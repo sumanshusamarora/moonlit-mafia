@@ -40,7 +40,7 @@ export function MafiaActionPrompt({ game, viewerId }: MafiaActionPromptProps) {
   );
 
   const mafiaTargets = game.players.filter(
-    (player) => player.isAlive && player.uid !== viewerId && player.role !== "mafia"
+    (player) => player.isAlive && player.uid !== viewerId && player.role !== "mafia" && !player.isSpectator
   );
 
   const viewerVote = mafiaVotes.find((vote) => vote.voterUid === viewerId);

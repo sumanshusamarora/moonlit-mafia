@@ -56,7 +56,7 @@ const createInitialNightState = (stage: NightStage = "idle"): NightState => {
 };
 
 const getAliveRoleUids = (game: MafiaGame, role: GameRole) =>
-  game.players.filter((player) => player.role === role && player.isAlive).map((player) => player.uid);
+  game.players.filter((player) => player.role === role && player.isAlive && !player.isSpectator).map((player) => player.uid);
 
 const shuffleArray = <T,>(items: T[]): T[] => {
   const result = [...items];
@@ -1022,6 +1022,12 @@ export const submitVote = async (
   const snapshot = await getDoc(gameRef);
   if (!snapshot.exists()) return;
   const game = snapshot.data() as MafiaGame;
+  
+  // Validate that the voter is an alive player (not a spectator)
+  const voter = game.players.find((p) => p.uid === vote.voterUid);
+  if (!voter || !voter.isAlive || voter.isSpectator) {
+    throw new Error("Only alive players can vote");
+  }
   
   const existingVote = game.votes?.find((entry) => entry.voterUid === vote.voterUid);
   const votes = [...(game.votes ?? [])].filter((entry) => entry.voterUid !== vote.voterUid);
