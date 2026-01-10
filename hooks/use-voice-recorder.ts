@@ -33,6 +33,7 @@ export function useVoiceRecorder(
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const recordingTimeRef = useRef<number>(0);
 
   // Cleanup function - stops all recording activity and releases resources
   const cleanup = useCallback(() => {
@@ -40,7 +41,9 @@ export function useVoiceRecorder(
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+    if (mediaRecorderRef.current && 
+        (mediaRecorderRef.current.state === "recording" || 
+         mediaRecorderRef.current.state === "paused")) {
       try {
         mediaRecorderRef.current.stop();
       } catch (err) {
@@ -86,7 +89,7 @@ export function useVoiceRecorder(
 
       mediaRecorder.onstop = () => {
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        const duration = recordingTime;
+        const duration = recordingTimeRef.current;
         setAudioBlob(blob);
         setIsRecording(false);
 
@@ -119,24 +122,24 @@ export function useVoiceRecorder(
       mediaRecorder.start();
       setIsRecording(true);
       setRecordingTime(0);
+      recordingTimeRef.current = 0;
 
       // Start timer
       timerRef.current = setInterval(() => {
-        setRecordingTime((prev) => {
-          const next = prev + 1;
-          // Auto-stop if max duration reached
-          if (next >= maxDuration) {
-            stopRecording();
-          }
-          return next;
-        });
+        recordingTimeRef.current += 1;
+        setRecordingTime(recordingTimeRef.current);
+        
+        // Auto-stop if max duration reached
+        if (recordingTimeRef.current >= maxDuration && mediaRecorderRef.current?.state === "recording") {
+          mediaRecorderRef.current.stop();
+        }
       }, 1000);
     } catch (err) {
       console.error("Failed to start recording:", err);
       setError("Failed to access microphone. Please check your permissions.");
       cleanup();
     }
-  }, [isRecording, audioBlob, recordingTime, maxDuration, onRecordingComplete, cleanup]);
+  }, [isRecording, audioBlob, maxDuration, onRecordingComplete, cleanup]);
 
   const stopRecording = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
