@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { MicIcon, Trash2Icon } from "lucide-react";
+import { MicIcon, Trash2Icon, AlertCircleIcon } from "lucide-react";
+import { useVoiceRecorder } from "@/hooks/use-voice-recorder";
 
 interface VoiceRecorderProps {
   onRecordingReady: (audioBlob: Blob | null) => void;
@@ -10,32 +11,24 @@ interface VoiceRecorderProps {
 }
 
 export function VoiceRecorder({ onRecordingReady, disabled }: VoiceRecorderProps) {
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const isPressingRef = useRef<boolean>(false);
+  
+  const {
+    isRecording,
+    recordingTime,
+    audioBlob,
+    startRecording,
+    stopRecording,
+    deleteRecording,
+    error,
+  } = useVoiceRecorder();
 
+  // Use ref to track recording state for event handlers
+  const isRecordingRef = useRef<boolean>(false);
+  
+  // Keep ref in sync with state
   useEffect(() => {
-    // Global mouseup listener to catch mouseup anywhere on the page
-    const handleGlobalMouseUp = () => {
-      isPressingRef.current = false;
-      if (isRecording) {
-        stopRecording();
-      }
-    };
-
-    window.addEventListener('mouseup', handleGlobalMouseUp);
-    window.addEventListener('touchend', handleGlobalMouseUp);
-
-    return () => {
-      cleanup();
-      window.removeEventListener('mouseup', handleGlobalMouseUp);
-      window.removeEventListener('touchend', handleGlobalMouseUp);
-    };
+    isRecordingRef.current = isRecording;
   }, [isRecording]);
 
   // Notify parent when audio blob changes
@@ -43,134 +36,72 @@ export function VoiceRecorder({ onRecordingReady, disabled }: VoiceRecorderProps
     onRecordingReady(audioBlob);
   }, [audioBlob, onRecordingReady]);
 
-  const cleanup = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
+  // Global release handlers - catch mouseup/touchend anywhere on the page
+  // Using ref to avoid recreating this callback when isRecording changes
+  const handleGlobalRelease = useCallback(() => {
+    isPressingRef.current = false;
+    if (isRecordingRef.current) {
+      stopRecording();
     }
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop();
-    }
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    }
-  };
+  }, [stopRecording]);
 
-  const startRecording = async () => {
-    if (disabled || audioBlob) return;
+  useEffect(() => {
+    window.addEventListener('mouseup', handleGlobalRelease);
+    window.addEventListener('touchend', handleGlobalRelease);
+    window.addEventListener('touchcancel', handleGlobalRelease);
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "audio/webm",
-      });
+    return () => {
+      window.removeEventListener('mouseup', handleGlobalRelease);
+      window.removeEventListener('touchend', handleGlobalRelease);
+      window.removeEventListener('touchcancel', handleGlobalRelease);
+    };
+  }, [handleGlobalRelease]);
 
-      chunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          chunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-        setAudioBlob(blob);
-        if (streamRef.current) {
-          streamRef.current.getTracks().forEach((track) => track.stop());
-          streamRef.current = null;
-        }
-      };
-
-      mediaRecorderRef.current = mediaRecorder;
-      mediaRecorder.start();
-      setIsRecording(true);
-      setRecordingTime(0);
-
-      timerRef.current = setInterval(() => {
-        setRecordingTime((prev) => prev + 1);
-      }, 1000);
-    } catch (error) {
-      console.error("Failed to start recording:", error);
-      alert("Failed to access microphone. Please check your permissions.");
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    }
-  };
-
-  const deleteRecording = () => {
-    setAudioBlob(null);
-    setRecordingTime(0);
-    chunksRef.current = [];
-  };
-
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
-    isPressingRef.current = true;
     
-    // Small delay to ensure this is a hold, not a click
-    setTimeout(() => {
-      if (isPressingRef.current && !audioBlob && !isRecording) {
-        startRecording();
-      }
-    }, 150);
-  };
-
-  const handleMouseUp = (e: React.MouseEvent) => {
-    e.preventDefault();
-    isPressingRef.current = false;
-    if (isRecording) {
-      stopRecording();
-    }
-  };
-
-  const handleMouseLeave = () => {
-    // Stop recording if mouse leaves button while recording
-    isPressingRef.current = false;
-    if (isRecording) {
-      stopRecording();
-    }
-  };
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    e.preventDefault();
+    // Don't start if disabled or already have a recording
+    if (disabled || audioBlob || isRecording) return;
+    
     isPressingRef.current = true;
-    if (!audioBlob && !isRecording) {
-      startRecording();
-    }
-  };
+    startRecording();
+  }, [disabled, audioBlob, isRecording, startRecording]);
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
     isPressingRef.current = false;
+    
     if (isRecording) {
       stopRecording();
     }
-  };
+  }, [isRecording, stopRecording]);
 
-  // Prevent click event from firing after mousedown/mouseup
-  const handleClick = (e: React.MouseEvent) => {
+  // Prevent accidental click events
+  const handleClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-  };
+  }, []);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
+
+  // Show error if recording failed
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 p-2">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-destructive/20">
+          <AlertCircleIcon className="h-4 w-4 text-destructive" />
+        </div>
+        <div className="flex-1">
+          <p className="text-xs font-medium text-destructive">Recording failed</p>
+          <p className="text-xs text-muted-foreground">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   // Show recording preview if audio exists
   if (audioBlob) {
@@ -220,14 +151,11 @@ export function VoiceRecorder({ onRecordingReady, disabled }: VoiceRecorderProps
       type="button"
       size="sm"
       variant="ghost"
-      onMouseDown={handleMouseDown}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseLeave}
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
+      onPointerDown={handlePointerDown}
+      onPointerUp={handlePointerUp}
       onClick={handleClick}
       disabled={disabled}
-      className="h-9 w-9 p-0"
+      className="h-9 w-9 p-0 touch-none"
       title="Hold to record voice message"
     >
       <MicIcon className="h-4 w-4" />
