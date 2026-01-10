@@ -63,7 +63,7 @@ export function useAIDefenseDraft(
     
     // Check if player is alive and not a spectator
     const player = game.players.find((p) => p.uid === playerUid);
-    const isAlivePlayer = player?.isAlive && !player?.isSpectator;
+    const isAlivePlayer = !!(player?.isAlive && !player?.isSpectator);
 
     return { 
       isHighestVoted: isHighest,
