@@ -1077,17 +1077,17 @@ export const submitVote = async (
   });
 
   // Record vote event
-  const voter = game.players.find((p) => p.uid === vote.voterUid);
+  const voterPlayer = game.players.find((p) => p.uid === vote.voterUid);
   const target = game.players.find((p) => p.uid === vote.targetUid);
   
-  if (voter && target) {
+  if (voterPlayer && target) {
     if (existingVote && existingVote.targetUid !== vote.targetUid) {
       // Vote changed
       const previousTarget = game.players.find((p) => p.uid === existingVote.targetUid);
       if (previousTarget) {
         await recordGameEvent(gameId, "vote-changed", game.phase, game.round, {
-          voterUid: voter.uid,
-          voterName: voter.name,
+          voterUid: voterPlayer.uid,
+          voterName: voterPlayer.name,
           previousTargetUid: previousTarget.uid,
           previousTargetName: previousTarget.name,
           newTargetUid: target.uid,
@@ -1097,8 +1097,8 @@ export const submitVote = async (
     } else if (!existingVote) {
       // New vote cast
       await recordGameEvent(gameId, "vote-cast", game.phase, game.round, {
-        voterUid: voter.uid,
-        voterName: voter.name,
+        voterUid: voterPlayer.uid,
+        voterName: voterPlayer.name,
         targetUid: target.uid,
         targetName: target.name,
       });
