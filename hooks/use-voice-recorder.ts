@@ -176,6 +176,7 @@ export function useVoiceRecorder(
   const deleteRecording = useCallback(() => {
     setAudioBlob(null);
     setRecordingTime(0);
+    recordingTimeRef.current = 0;
     setError(null);
     chunksRef.current = [];
   }, []);
