@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useMemo, useRef, useState, useCallback, useEffect } from "react";
-import type { GameMessage } from "@/types/game";
+import type { GameMessage, MafiaGame } from "@/types/game";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -9,8 +9,10 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { SmileIcon, SendIcon } from "lucide-react";
 import { VoiceRecorder } from "./voice-recorder";
 import { VoicePlayer, type VoicePlayerRef } from "./voice-player";
+import { AIDefenseNudge } from "./ai-defense-nudge";
 import { cn } from "@/lib/utils";
 import { useVoiceAutoplay } from "@/hooks/use-voice-autoplay";
+import { useAIDefenseDraft } from "@/hooks/use-ai-defense-draft";
 import { toast } from "sonner";
 
 const EMOJI_PRESETS = ["😀", "😂", "😎", "🤔", "😱", "🧐", "🔥", "💀", "🌕", "🎭"];
@@ -22,14 +24,19 @@ interface ChatPanelProps {
   phase: string;
   disabled?: boolean;
   autoplayEnabled?: boolean;
+  game?: MafiaGame | null;
+  viewerId?: string | null;
 }
 
-export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, autoplayEnabled = false }: ChatPanelProps) {
+export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, autoplayEnabled = false, game, viewerId }: ChatPanelProps) {
   const [value, setValue] = useState("");
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const voicePlayerRefs = useRef<Map<string, React.RefObject<VoicePlayerRef> | null>>(new Map());
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+
+  // AI Defense feature
+  const aiDefense = useAIDefenseDraft(game || null, viewerId || null);
 
   const sortedMessages = useMemo(
     () => [...messages].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0)),
@@ -89,6 +96,16 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
     setVoiceBlob(audioBlob);
   };
 
+  const handleAIDefenseSend = async (text: string) => {
+    await onSend(text);
+    aiDefense.markAsUsed();
+    aiDefense.clearDraft();
+  };
+
+  const handleAIDismiss = () => {
+    aiDefense.clearDraft();
+  };
+
   return (
     <Card className="flex h-full flex-col">
       <CardHeader>
@@ -102,6 +119,18 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
             <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
               💡 Tap anywhere to enable audio playback
             </div>
+          )}
+          {/* AI Defense Nudge - Only show if conditions are met */}
+          {aiDefense.canShowDefense && !disabled && (
+            <AIDefenseNudge
+              isGenerating={aiDefense.isGenerating}
+              draftText={aiDefense.draftText}
+              error={aiDefense.error}
+              onGenerate={aiDefense.generateDefense}
+              onSend={handleAIDefenseSend}
+              onDismiss={handleAIDismiss}
+              onUpdateDraft={aiDefense.updateDraftText}
+            />
           )}
           <Textarea
             placeholder={disabled ? "You cannot participate in chat as an observer" : "Share a hunch with the town..."}

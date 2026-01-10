@@ -454,6 +454,8 @@ export default function GameRoomPage() {
                   phase={game.phase}
                   disabled={!viewer}
                   autoplayEnabled={settings.autoplayVoiceMessages}
+                  game={game}
+                  viewerId={viewerId}
                 />
               </div>
             </div>
@@ -842,6 +844,8 @@ export default function GameRoomPage() {
               phase={game.phase}
               disabled={!viewer}
               autoplayEnabled={settings.autoplayVoiceMessages}
+              game={game}
+              viewerId={viewerId}
             />
           </aside>
         </section>
