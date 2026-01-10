@@ -35,6 +35,7 @@ import {
 import { toast } from "sonner";
 import { Loader2Icon, MoonIcon, SunIcon, UsersIcon, MessageSquareIcon, ActivityIcon, SettingsIcon } from "lucide-react";
 import { SettingsPanel } from "@/components/game/settings-panel";
+import { AdminControlPanel } from "@/components/game/admin-control-panel";
 
 export default function GameRoomPage() {
   const params = useParams<{ gameId: string }>();
@@ -393,6 +394,11 @@ export default function GameRoomPage() {
     <AppShell
       headerSlot={
         <div className="flex items-center gap-3">
+          {game.isTestMode && (
+            <Badge variant="outline" className="border-yellow-500 bg-yellow-500/10 text-yellow-600">
+              🧪 TEST MODE
+            </Badge>
+          )}
           <Badge variant="secondary" data-testid="game-code-display">
             Code: {game.code}
           </Badge>
@@ -434,7 +440,12 @@ export default function GameRoomPage() {
                 onVote={handleVote}
                 onClearVote={handleClearVote}
                 onReadyToggle={handleReadyToggle}
-              />              {/* Chat Panel */}
+              />
+              
+              {/* Admin Control Panel in Test Mode */}
+              {game.isTestMode && isHost && <AdminControlPanel game={game} />}
+              
+              {/* Chat Panel */}
               <div className="h-[400px]">
                 <ChatPanel
                   messages={messages}
@@ -815,9 +826,10 @@ export default function GameRoomPage() {
             <SettingsPanel />
           </aside>
 
-          {/* Center Column: Action Center + Activity Timeline */}
+          {/* Center Column: Action Center + Admin Panel + Activity Timeline */}
           <div className="space-y-6">
             <ActionCenter game={game} viewerId={viewerId} messages={messages} onVote={handleVote} onClearVote={handleClearVote} onReadyToggle={handleReadyToggle} />
+            {game.isTestMode && isHost && <AdminControlPanel game={game} />}
             <ActivityTimeline gameId={game.id} />
           </div>
 

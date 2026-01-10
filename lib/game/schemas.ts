@@ -65,6 +65,16 @@ export const gameConfigSchema = z.object({
 export const createGameSchema = z.object({
   hostName: z.string().min(2).max(24),
   config: gameConfigSchema,
+  isTestMode: z.boolean().optional(),
+  testPlayerCount: z.number().int().min(1).max(12).optional(),
+}).superRefine((data, ctx) => {
+  if (data.isTestMode && !data.testPlayerCount) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["testPlayerCount"],
+      message: "Test player count is required when test mode is enabled",
+    });
+  }
 });
 
 export const joinGameSchema = z.object({

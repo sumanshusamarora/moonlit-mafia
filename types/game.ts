@@ -69,6 +69,7 @@ export interface GamePlayer {
   muted?: boolean;
   detectiveChecksRemaining?: number | null;
   detectiveRevealed?: boolean;
+  isTestPlayer?: boolean;
 }
 
 export interface VoteState {
@@ -109,6 +110,7 @@ export interface MafiaGame {
   phaseEndsAt?: number | null;
   lastAction?: string;
   status: "waiting" | "in-progress" | "completed";
+  isTestMode?: boolean;
 }
 
 export interface JoinGamePayload {
@@ -119,4 +121,6 @@ export interface JoinGamePayload {
 export interface CreateGamePayload {
   hostName: string;
   config: GameConfig;
+  isTestMode?: boolean;
+  testPlayerCount?: number;
 }

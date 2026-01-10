@@ -22,6 +22,7 @@ type FormValues = CreateGamePayload;
 
 export function CreateGameForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isTestModeEnabled, setIsTestModeEnabled] = useState(false);
   const router = useRouter();
   const defaultConfig = useMemo(() => structuredClone(DEFAULT_GAME_CONFIG), []);
 
@@ -30,6 +31,8 @@ export function CreateGameForm() {
     defaultValues: {
       hostName: "",
       config: defaultConfig,
+      isTestMode: false,
+      testPlayerCount: 4,
     },
   });
 
@@ -38,6 +41,7 @@ export function CreateGameForm() {
   const mafiaCount = useMemo(() => roles.find((role) => role.role === "mafia")?.count ?? 0, [roles]);
   const detectiveOncePerRound = form.watch("config.detectiveOncePerRound");
   const detectiveChecksLimit = form.watch("config.detectiveChecksLimit");
+  const testPlayerCount = form.watch("testPlayerCount");
 
   // Reset role counts to defaults when maxPlayers slider changes
   useEffect(() => {
@@ -74,6 +78,14 @@ export function CreateGameForm() {
   const handleDetectiveLimitChange = (value: number) => {
     const next = Number.isFinite(value) && value >= 0 ? Math.min(Math.floor(value), mafiaCount) : 0;
     form.setValue("config.detectiveChecksLimit", next, { shouldDirty: true });
+  };
+
+  const handleTestModeToggle = (checked: boolean) => {
+    setIsTestModeEnabled(checked);
+    form.setValue("isTestMode", checked, { shouldDirty: true });
+    if (!checked) {
+      form.setValue("testPlayerCount", undefined, { shouldDirty: true });
+    }
   };
 
   const onSubmit = async (values: FormValues) => {
@@ -158,6 +170,43 @@ export function CreateGameForm() {
               />
               <p className="text-xs text-muted-foreground">Hide vote origins until the reveal moment.</p>
             </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xl font-semibold">🧪 Test Mode (Solo Testing)</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="test-mode-toggle">Enable Test Mode</Label>
+                <Switch
+                  id="test-mode-toggle"
+                  checked={isTestModeEnabled}
+                  onCheckedChange={handleTestModeToggle}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Creates simulated players so you can test the game alone. This lobby will be hidden from real players.
+              </p>
+            </div>
+            {isTestModeEnabled && (
+              <div className="space-y-2 rounded-lg border border-primary/50 bg-primary/5 p-4">
+                <Label htmlFor="test-player-count">Number of test players</Label>
+                <Slider
+                  id="test-player-count"
+                  min={1}
+                  max={12}
+                  step={1}
+                  value={[testPlayerCount ?? 4]}
+                  onValueChange={([value]) => form.setValue("testPlayerCount", value, { shouldDirty: true })}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {testPlayerCount ?? 4} test player{(testPlayerCount ?? 4) !== 1 ? "s" : ""} will be created. You will be assigned Mafia role.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
