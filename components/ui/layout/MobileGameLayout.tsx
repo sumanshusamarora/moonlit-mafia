@@ -6,6 +6,10 @@ import { ChatSurface } from "../surfaces/ChatSurface";
 import { GameSurface } from "../surfaces/GameSurface";
 import { Badge } from "../badge";
 
+// Bottom navigation height constant for consistency
+const BOTTOM_NAV_HEIGHT = "5rem"; // 80px (20 * 4px)
+const BOTTOM_NAV_CLASS = "pb-20"; // Tailwind class equivalent
+
 interface MobileGameLayoutProps {
   /**
    * Phase indicator and game code in header
@@ -77,7 +81,7 @@ export function MobileGameLayout({
       </div>
 
       {/* Main Content Area - Scrollable */}
-      <GameSurface isMobile className="flex-1 overflow-y-auto pb-20">
+      <GameSurface isMobile className={`flex-1 overflow-y-auto ${BOTTOM_NAV_CLASS}`}>
         {/* Action Surface - Contextual height */}
         <ActionSurface heightMode={actionHeightMode}>
           {actionContent}
