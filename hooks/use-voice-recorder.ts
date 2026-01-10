@@ -80,9 +80,20 @@ export function useVoiceRecorder(
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "audio/webm",
-      });
+      // Choose supported audio format (webm preferred, fallback to default)
+      let mimeType = "audio/webm";
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        // Try mp4 for Safari and other browsers
+        mimeType = "audio/mp4";
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          // Use browser default if neither is supported
+          mimeType = "";
+        }
+      }
+
+      const mediaRecorder = new MediaRecorder(stream, 
+        mimeType ? { mimeType } : undefined
+      );
 
       chunksRef.current = [];
 
@@ -93,7 +104,9 @@ export function useVoiceRecorder(
       };
 
       mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        const blob = new Blob(chunksRef.current, { 
+          type: mimeType || "audio/webm" 
+        });
         const duration = recordingTimeRef.current;
         setAudioBlob(blob);
         setIsRecording(false);
@@ -140,8 +153,8 @@ export function useVoiceRecorder(
         // Auto-stop if max duration reached
         if (recordingTimeRef.current >= maxDuration) {
           const recorder = mediaRecorderRef.current;
-          if (recorder && recorder.state === "recording") {
-            recorder.stop();
+          if (isRecorderActive(recorder)) {
+            recorder!.stop();
           }
         }
       }, 1000);
@@ -154,8 +167,8 @@ export function useVoiceRecorder(
 
   const stopRecording = useCallback(() => {
     const recorder = mediaRecorderRef.current;
-    if (recorder && (recorder.state === "recording" || recorder.state === "paused")) {
-      recorder.stop();
+    if (isRecorderActive(recorder)) {
+      recorder!.stop();
       // Note: cleanup happens in onstop handler
     }
   }, []);
