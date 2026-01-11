@@ -97,7 +97,7 @@ export default function GameRoomPage() {
         continue;
       }
 
-      const data = event.data as DetectiveInvestigationEventData;
+      const data = event.data as unknown as DetectiveInvestigationEventData;
       const detectiveUid = data.detectiveUid;
       if (!detectiveUid) {
         continue;
@@ -160,7 +160,7 @@ export default function GameRoomPage() {
     );
 
     if (latestNightOutcome) {
-      const data = latestNightOutcome.data as NightOutcomeEventData;
+      const data = latestNightOutcome.data as unknown as NightOutcomeEventData;
       let description = "Night passed without incident.";
       let tone: ActionResultItem["tone"] = "neutral";
 
@@ -191,7 +191,7 @@ export default function GameRoomPage() {
     );
 
     if (latestDayElimination) {
-      const data = latestDayElimination.data as DayEliminationEventData;
+      const data = latestDayElimination.data as unknown as DayEliminationEventData;
       let description = `${data.eliminatedName} was voted out.`;
       if (data.eliminatedRole) {
         description += ` Role revealed: ${data.eliminatedRole}.`;

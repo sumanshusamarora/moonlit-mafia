@@ -7,7 +7,6 @@ import type { MafiaGame } from "@/types/game";
 import { useAuth } from "@/components/providers/auth-provider";
 
 const EMPTY_GAMES: MafiaGame[] = [];
-const db = getFirebaseFirestore();
 
 interface GameListState {
   ownerId: string | null;
@@ -29,6 +28,7 @@ export function useGameList() {
       return;
     }
 
+    const db = getFirebaseFirestore();
     const gamesRef = collection(db, "games");
 
     const hostQuery = query(

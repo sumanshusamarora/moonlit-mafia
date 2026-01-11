@@ -9,9 +9,9 @@ import {
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { firebaseConfig } from "./config";
 
-let app = getApps()[0];
+let app = typeof window !== "undefined" ? getApps()[0] : undefined;
 
-if (!app) {
+if (typeof window !== "undefined" && !app) {
   assertFirebaseConfig();
   app = initializeApp(firebaseConfig);
 }
@@ -20,8 +20,14 @@ let auth: Auth | undefined;
 let db: Firestore | undefined;
 
 export const getFirebaseAuth = () => {
+  if (typeof window === "undefined") {
+    throw new Error("Firebase Auth can only be accessed in the browser");
+  }
   if (auth) {
     return auth;
+  }
+  if (!app) {
+    throw new Error("Firebase app not initialized");
   }
   auth = getAuth(app);
   void setPersistence(auth, browserLocalPersistence).catch(console.error);
@@ -29,8 +35,14 @@ export const getFirebaseAuth = () => {
 };
 
 export const getFirebaseFirestore = () => {
+  if (typeof window === "undefined") {
+    throw new Error("Firebase Firestore can only be accessed in the browser");
+  }
   if (db) {
     return db;
+  }
+  if (!app) {
+    throw new Error("Firebase app not initialized");
   }
   db = getFirestore(app);
   return db;
