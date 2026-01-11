@@ -1003,8 +1003,8 @@ export default function GameRoomPage() {
                 </div>
               )}
               
-              {/* Chat Panel */}
-              <div style={{ height: 'max(50dvh, 400px)' }}>
+              {/* Chat Panel - Mobile optimized with viewport-based height */}
+              <div className="lg:hidden" style={{ height: '65vh', minHeight: '500px' }}>
                 <ChatPanel
                   messages={messages}
                   onSend={handleSendMessage}

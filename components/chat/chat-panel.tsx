@@ -159,115 +159,115 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
         </p>
         {variant === "minimal" && disabled && <span className="text-xs text-white/50">Observer</span>}
       </div>
-      <div className="flex h-full flex-col gap-4">
-        <form onSubmit={handleSubmit} className="space-y-3">
-          {autoplayBlocked && (
-            <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-              💡 Tap anywhere to enable audio playback
-            </div>
-          )}
-          {/* AI Defense Nudge - Only show if conditions are met */}
-          {aiDefense.canShowDefense && !disabled && (
-            <AIDefenseNudge
-              isGenerating={aiDefense.isGenerating}
-              draftText={aiDefense.draftText}
-              error={aiDefense.error}
-              onGenerate={aiDefense.generateDefense}
-              onSend={handleAIDefenseSend}
-              onDismiss={handleAIDismiss}
-              onUpdateDraft={aiDefense.updateDraftText}
-            />
-          )}
-          <Textarea
-            placeholder={disabled ? "You cannot participate in chat as an observer" : "Share a hunch with the town..."}
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            disabled={disabled || !!voiceBlob}
-            rows={3}
-          />
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button type="button" variant="ghost" size="sm" disabled={disabled || !!voiceBlob}>
-                    <SmileIcon className="mr-2 h-4 w-4" aria-hidden />
-                    Emoji
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-fit">
-                  <div className="grid grid-cols-5 gap-2">
-                    {EMOJI_PRESETS.map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        className="grid h-10 w-10 place-items-center rounded-md text-xl hover:bg-muted"
-                        onClick={() => setValue((prev) => `${prev} ${emoji}`.trim())}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-              {onSendVoice && (
-                <VoiceRecorder
-                  onRecordingReady={handleRecordingReady}
-                  disabled={disabled || !!value.trim()}
-                  isSending={voiceSendState === 'sending'}
-                />
-              )}
-            </div>
-            <Button type="submit" disabled={(!value.trim() && !voiceBlob) || disabled || voiceSendState === 'sending'}>
-              <SendIcon className="mr-2 h-4 w-4" aria-hidden />
-              Send
-            </Button>
-          </div>
-        </form>
-        <div ref={viewportRef} className={transcriptClasses}>
-          <div className="flex flex-col gap-3 p-4">
-            {sortedMessages.map((message, index) => {
-              const displayAuthorName =
-                message.authorUid === "system" && message.authorName === "Narrator"
-                  ? "God"
-                  : message.authorName;
-              return (
-                <div
-                  key={message.id || `${message.createdAt}-${message.authorUid}-${index}`}
-                  className={cn(
-                    messageClasses,
-                    message.isSystem && (variant === "minimal" ? "border border-white/20 bg-transparent text-white/60" : "border-dashed text-muted-foreground")
-                  )}
-                >
-                  <div className="flex items-center justify-between text-xs text-textSecondary">
-                    <span className="font-semibold text-textPrimary">{displayAuthorName}</span>
-                    <span>{formatRelative(message.createdAt)}</span>
-                  </div>
-                  {message.voiceUrl ? (
-                    <VoicePlayer
-                      ref={(ref) => {
-                        if (message.id && ref) {
-                          voicePlayerRefs.current.set(message.id, { current: ref });
-                        }
-                      }}
-                      voiceUrl={message.voiceUrl}
-                      duration={message.voiceDuration || 0}
-                      authorName={displayAuthorName}
-                    />
-                  ) : (
-                    <>
-                      <p className="leading-relaxed">{message.body}</p>
-                      {message.emoji && <span className="text-lg">{message.emoji}</span>}
-                    </>
-                  )}
+      {/* Messages Container - Takes flex: 1 to fill available space */}
+      <div ref={viewportRef} className={transcriptClasses}>
+        <div className="flex flex-col gap-3 p-4">
+          {sortedMessages.map((message, index) => {
+            const displayAuthorName =
+              message.authorUid === "system" && message.authorName === "Narrator"
+                ? "God"
+                : message.authorName;
+            return (
+              <div
+                key={message.id || `${message.createdAt}-${message.authorUid}-${index}`}
+                className={cn(
+                  messageClasses,
+                  message.isSystem && (variant === "minimal" ? "border border-white/20 bg-transparent text-white/60" : "border-dashed text-muted-foreground")
+                )}
+              >
+                <div className="flex items-center justify-between text-xs text-textSecondary">
+                  <span className="font-semibold text-textPrimary">{displayAuthorName}</span>
+                  <span>{formatRelative(message.createdAt)}</span>
                 </div>
-              );
-            })}
-            {!sortedMessages.length && (
-              <p className="text-center text-xs text-muted-foreground">No messages yet.</p>
-            )}
-          </div>
+                {message.voiceUrl ? (
+                  <VoicePlayer
+                    ref={(ref) => {
+                      if (message.id && ref) {
+                        voicePlayerRefs.current.set(message.id, { current: ref });
+                      }
+                    }}
+                    voiceUrl={message.voiceUrl}
+                    duration={message.voiceDuration || 0}
+                    authorName={displayAuthorName}
+                  />
+                ) : (
+                  <>
+                    <p className="leading-relaxed">{message.body}</p>
+                    {message.emoji && <span className="text-lg">{message.emoji}</span>}
+                  </>
+                )}
+              </div>
+            );
+          })}
+          {!sortedMessages.length && (
+            <p className="text-center text-xs text-muted-foreground">No messages yet.</p>
+          )}
         </div>
       </div>
+      {/* Input Bar - Pinned at bottom with flex-shrink: 0 */}
+      <form onSubmit={handleSubmit} className="mt-4 flex-shrink-0 space-y-3">
+        {autoplayBlocked && (
+          <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+            💡 Tap anywhere to enable audio playback
+          </div>
+        )}
+        {/* AI Defense Nudge - Only show if conditions are met */}
+        {aiDefense.canShowDefense && !disabled && (
+          <AIDefenseNudge
+            isGenerating={aiDefense.isGenerating}
+            draftText={aiDefense.draftText}
+            error={aiDefense.error}
+            onGenerate={aiDefense.generateDefense}
+            onSend={handleAIDefenseSend}
+            onDismiss={handleAIDismiss}
+            onUpdateDraft={aiDefense.updateDraftText}
+          />
+        )}
+        <Textarea
+          placeholder={disabled ? "You cannot participate in chat as an observer" : "Share a hunch with the town..."}
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          disabled={disabled || !!voiceBlob}
+          rows={3}
+        />
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" disabled={disabled || !!voiceBlob}>
+                  <SmileIcon className="mr-2 h-4 w-4" aria-hidden />
+                  Emoji
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-fit">
+                <div className="grid grid-cols-5 gap-2">
+                  {EMOJI_PRESETS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      className="grid h-10 w-10 place-items-center rounded-md text-xl hover:bg-muted"
+                      onClick={() => setValue((prev) => `${prev} ${emoji}`.trim())}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+            {onSendVoice && (
+              <VoiceRecorder
+                onRecordingReady={handleRecordingReady}
+                disabled={disabled || !!value.trim()}
+                isSending={voiceSendState === 'sending'}
+              />
+            )}
+          </div>
+          <Button type="submit" disabled={(!value.trim() && !voiceBlob) || disabled || voiceSendState === 'sending'}>
+            <SendIcon className="mr-2 h-4 w-4" aria-hidden />
+            Send
+          </Button>
+        </div>
+      </form>
     </div>
   );
 }
