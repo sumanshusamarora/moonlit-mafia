@@ -925,12 +925,34 @@ export default function GameRoomPage() {
           {/* Game Tab - Combined Action + Chat */}
           <div data-tab="game" className={activeTab === "game" ? "block pb-20" : "hidden"}>
             <div className="space-y-4 p-4">
+              {/* Test Mode Indicator */}
+              {game.isTestMode && isHost && testModeViewerUid && (
+                <div className="rounded-lg border border-primary/50 bg-primary/10 p-3 text-sm">
+                  <p className="font-semibold text-primary">
+                    🧪 Acting as: {game.players.find(p => p.uid === testModeViewerUid)?.name}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Go to Players tab to switch back or select another player
+                  </p>
+                </div>
+              )}
+              
               {/* Action Center */}
               <ActionCenter 
                 game={game} 
-                viewerId={viewerId}
-                onVote={handleVote}
-                onClearVote={handleClearVote}
+                viewerId={effectiveViewerId}
+                onVote={async (targetUid: string) => {
+                  if (effectiveViewerId === viewerId) {
+                    return handleVote(targetUid);
+                  }
+                  return handleVoteAs(effectiveViewerId, targetUid);
+                }}
+                onClearVote={async () => {
+                  if (effectiveViewerId === viewerId) {
+                    return handleClearVote();
+                  }
+                  return handleClearVoteAs(effectiveViewerId);
+                }}
                 onReadyToggle={handleReadyToggle}
                 investigationHistory={detectiveHistory}
                 variant="mobile"
@@ -975,6 +997,10 @@ export default function GameRoomPage() {
                   viewerIsDead={viewerIsDead}
                   revealDeadRoles={game.config.revealRolesOnDeath || game.phase === "ended"}
                   viewerRole={viewerRole}
+                  isTestMode={game.isTestMode}
+                  isHost={isHost}
+                  selectedPlayerUid={testModeViewerUid}
+                  onSelectPlayerUid={setTestModeViewerUid}
                 />
               </CardContent>
             </Card>
