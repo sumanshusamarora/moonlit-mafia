@@ -21,7 +21,7 @@ let db: Firestore | undefined;
 
 export const getFirebaseAuth = () => {
   if (typeof window === "undefined") {
-    throw new Error("Firebase Auth can only be accessed in the browser");
+    throw new Error("Firebase Auth can only be accessed in the browser. Ensure this function is called from client-side code or within a browser environment check.");
   }
   if (auth) {
     return auth;
@@ -36,7 +36,7 @@ export const getFirebaseAuth = () => {
 
 export const getFirebaseFirestore = () => {
   if (typeof window === "undefined") {
-    throw new Error("Firebase Firestore can only be accessed in the browser");
+    throw new Error("Firebase Firestore can only be accessed in the browser. Ensure this function is called from client-side code or within a browser environment check.");
   }
   if (db) {
     return db;

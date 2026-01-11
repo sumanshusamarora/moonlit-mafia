@@ -27,7 +27,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body
         className="min-h-screen bg-background text-foreground antialiased"
-        style={{ fontFamily: 'InterVariable, system-ui, sans-serif' }}
+        style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
       >
         <AppProviders>{children}</AppProviders>
       </body>
