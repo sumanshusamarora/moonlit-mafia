@@ -114,6 +114,10 @@ async function generateAICommentary(
   params: NightCommentaryParams | DayCommentaryParams
 ): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
+  const openaiBaseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
+  const model = process.env.OPENAI_COMMENTARY_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+  const openaiOrgId = process.env.OPENAI_ORG_ID;
+  const openaiProjectId = process.env.OPENAI_PROJECT_ID;
   
   if (!apiKey) {
     console.log("OpenAI API key not found, using template fallback");
@@ -128,25 +132,32 @@ async function generateAICommentary(
 
     console.log("Calling OpenAI API for commentary generation...");
     
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch(`${openaiBaseUrl}/responses`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`,
+        ...(openaiOrgId ? { "OpenAI-Organization": openaiOrgId } : null),
+        ...(openaiProjectId ? { "OpenAI-Project": openaiProjectId } : null),
       },
       body: JSON.stringify({
-        model: "gpt-5-mini",
-        messages: [
+        model,
+        input: [
           {
             role: "system",
-            content: "You are a dramatic narrator for a Mafia game. Create short, atmospheric commentary (2-3 sentences max) about game events. Include appropriate emojis. Be creative and engaging, but concise."
+            content: [
+              {
+                type: "input_text",
+                text: "You are a dramatic narrator for a Mafia game. Create short, atmospheric commentary (2-3 sentences max) about game events. Include appropriate emojis. Be creative and engaging, but concise.",
+              },
+            ],
           },
           {
             role: "user",
-            content: prompt
-          }
+            content: [{ type: "input_text", text: prompt }],
+          },
         ],
-        max_tokens: 100,
+        max_output_tokens: 120,
         temperature: 0.9,
       }),
     });
@@ -157,8 +168,8 @@ async function generateAICommentary(
       throw new Error(`OpenAI API request failed: ${response.status}`);
     }
 
-    const data = await response.json();
-    const commentary = data.choices[0]?.message?.content;
+    const data: unknown = await response.json();
+    const commentary = extractResponseText(data);
     
     if (commentary) {
       console.log("✅ OpenAI commentary generated successfully");
@@ -171,6 +182,29 @@ async function generateAICommentary(
     console.error("❌ AI commentary generation failed, using template fallback:", error);
     return getTemplateCommentary(type, params);
   }
+}
+
+function extractResponseText(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const output = (data as { output?: unknown }).output;
+  if (!Array.isArray(output)) return null;
+
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue;
+    const type = (item as { type?: unknown }).type;
+    if (type !== "message") continue;
+    const content = (item as { content?: unknown }).content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      if ((part as { type?: unknown }).type === "output_text") {
+        const text = (part as { text?: unknown }).text;
+        if (typeof text === "string" && text.trim()) return text.trim();
+      }
+    }
+  }
+
+  return null;
 }
 
 function createNightPrompt(params: NightCommentaryParams): string {

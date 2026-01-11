@@ -110,14 +110,25 @@ export function useAIDefenseDraft(
       }
 
       if (!response.ok) {
-        throw new Error("Failed to generate defense");
+        let message = "Failed to generate defense";
+        try {
+          const data = await response.json();
+          if (typeof data?.message === "string" && data.message.trim()) {
+            message = data.message;
+          } else if (typeof data?.error === "string" && data.error.trim()) {
+            message = data.error;
+          }
+        } catch {
+          // Ignore parsing errors; fall back to generic message.
+        }
+        throw new Error(message);
       }
 
       const data = await response.json();
       setDraftText(data.defense);
     } catch (err) {
       console.error("Error generating defense:", err);
-      setError("Failed to generate defense. Please try again.");
+      setError(err instanceof Error ? err.message : "Failed to generate defense. Please try again.");
     } finally {
       setIsGenerating(false);
     }

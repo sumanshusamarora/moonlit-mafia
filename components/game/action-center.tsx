@@ -1,27 +1,42 @@
 "use client";
 
-import type { MafiaGame, GameMessage } from "@/types/game";
+import type { MafiaGame } from "@/types/game";
 import { PhaseIndicator } from "./phase-indicator";
 import { RoleReminder } from "./role-reminder";
 import { TimerDisplay } from "./timer-display";
 import { MafiaActionPrompt } from "./action-prompts/mafia-action-prompt";
 import { DoctorActionPrompt } from "./action-prompts/doctor-action-prompt";
-import { DetectiveActionPrompt } from "./action-prompts/detective-action-prompt";
+import {
+  DetectiveActionPrompt,
+  type InvestigationHistoryItem,
+} from "./action-prompts/detective-action-prompt";
 import { VotingPanel } from "./voting-panel";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { skipDetectiveInvestigation } from "@/lib/game/service";
+import { cn } from "@/lib/utils";
+import { ActionResults, type ActionResultItem } from "./action-results";
 
 interface ActionCenterProps {
   game: MafiaGame;
   viewerId: string;
-  messages?: GameMessage[];
   onVote: (targetUid: string) => Promise<void>;
   onClearVote: () => Promise<void>;
   onReadyToggle?: () => Promise<void>;
+  variant?: "desktop" | "mobile";
+  investigationHistory?: InvestigationHistoryItem[];
+  actionResults?: ActionResultItem[];
 }
 
-export function ActionCenter({ game, viewerId, messages, onVote, onClearVote, onReadyToggle }: ActionCenterProps) {
+export function ActionCenter({
+  game,
+  viewerId,
+  onVote,
+  onClearVote,
+  onReadyToggle,
+  variant = "mobile",
+  investigationHistory = [],
+  actionResults = [],
+}: ActionCenterProps) {
   const viewer = game.players.find((player) => player.uid === viewerId);
   if (!viewer) return null;
 
@@ -29,11 +44,6 @@ export function ActionCenter({ game, viewerId, messages, onVote, onClearVote, on
   const viewerAlive = viewer.isAlive;
   const nightState = game.nightState;
   const stage = nightState?.stage ?? "idle";
-
-  // Get the latest narrator message
-  const latestNarratorMessage = messages
-    ?.filter((msg) => msg.authorUid === "system" && msg.authorName === "Narrator")
-    .sort((a, b) => b.createdAt - a.createdAt)[0];
 
   const handleSkipDetectiveCheck = async () => {
     try {
@@ -44,26 +54,54 @@ export function ActionCenter({ game, viewerId, messages, onVote, onClearVote, on
     }
   };
 
+  const surfaceClasses = (tone: "default" | "warning" | "danger" | "muted" = "default") => {
+    if (variant === "desktop") {
+      switch (tone) {
+        case "warning":
+          return "rounded-2xl bg-amber-500/10 p-4 text-amber-100 ring-1 ring-amber-400/30";
+        case "danger":
+          return "rounded-2xl bg-red-500/10 p-4 text-red-100 ring-1 ring-red-400/30";
+        case "muted":
+          return "rounded-2xl bg-white/5 p-4 text-slate-200 ring-1 ring-white/10";
+        default:
+          return "rounded-2xl bg-white/5 p-4 text-slate-200 ring-1 ring-white/10";
+      }
+    }
+
+    switch (tone) {
+      case "warning":
+        return "space-y-2 rounded-lg border border-amber-400/60 bg-amber-500/10 p-3";
+      case "danger":
+        return "space-y-2 rounded-lg border border-destructive/60 bg-destructive/10 p-3";
+      case "muted":
+        return "space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3";
+      default:
+        return "space-y-2 rounded-lg border border-border/60 bg-muted/10 p-3";
+    }
+  };
+
   const renderActionPrompt = () => {
     // Lobby phase
     if (game.phase === "lobby") {
       return (
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">
-            Waiting for all players to ready up...
-          </p>
-          <div className="rounded-md border bg-muted/20 p-3">
-            <p className="text-sm font-medium">
-              Players Ready: {game.players.filter((p) => p.ready).length}/{game.players.length}
-            </p>
+        <div className={surfaceClasses("muted")}>
+          <div className="flex items-center justify-between text-xs uppercase tracking-wide text-white/60">
+            <span>Lobby status</span>
+            <span>
+              {game.players.filter((p) => p.ready).length}/{game.players.length} ready
+            </span>
           </div>
+          <p className="text-sm">
+            Waiting for everyone to ready up before the host can launch the game.
+          </p>
           {onReadyToggle && (
             <Button
               onClick={onReadyToggle}
-              variant={viewer.ready ? "outline" : "default"}
-              className="w-full"
+              variant={viewer.ready ? "ghost" : "default"}
+              className={variant === "desktop" ? "mt-3 w-full" : "w-full"}
+              data-testid="ready-toggle"
             >
-              {viewer.ready ? "Unready" : "Ready up"}
+              {viewer.ready ? "Cancel ready" : "Ready up"}
             </Button>
           )}
         </div>
@@ -74,14 +112,14 @@ export function ActionCenter({ game, viewerId, messages, onVote, onClearVote, on
     if (!viewerAlive && game.phase !== "day") {
       const isSpectator = viewer.isSpectator ?? false;
       return (
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">
+        <div className={surfaceClasses("muted")}>
+          <p className="text-sm">
             👻 {isSpectator 
-                ? "You joined as a spectator and are observing the game."
-                : "You are eliminated and observing as a ghost."}
+                ? "You joined as a spectator and can watch all the action."
+                : "You have been eliminated and now observe as a ghost."}
           </p>
-          <p className="text-xs text-muted-foreground">
-            You can see all roles revealed below.
+          <p className="text-xs opacity-70">
+            Roles will appear as they are revealed.
           </p>
         </div>
       );
@@ -108,6 +146,7 @@ export function ActionCenter({ game, viewerId, messages, onVote, onClearVote, on
             viewerId={viewerId}
             investigationsRemaining={investigationsRemaining}
             onSkip={handleSkipDetectiveCheck}
+            investigationHistory={investigationHistory}
           />
         );
       }
@@ -115,9 +154,9 @@ export function ActionCenter({ game, viewerId, messages, onVote, onClearVote, on
       // Resolution or waiting
       if (stage === "resolution" || stage === "idle") {
         return (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Night actions are complete. Waiting for host to advance phase.
+          <div className={surfaceClasses("muted")}>
+            <p className="text-sm">
+              Night actions are complete. Waiting for the host to advance to the next phase.
             </p>
           </div>
         );
@@ -125,11 +164,11 @@ export function ActionCenter({ game, viewerId, messages, onVote, onClearVote, on
 
       // Not your turn
       return (
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">
+        <div className={surfaceClasses("muted")}>
+          <p className="text-sm">
             😴 You are asleep while other roles perform their night actions.
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs opacity-70">
             Current stage: {stage}
           </p>
         </div>
@@ -141,11 +180,11 @@ export function ActionCenter({ game, viewerId, messages, onVote, onClearVote, on
       if (!viewerAlive) {
         const isSpectator = viewer.isSpectator ?? false;
         return (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
+          <div className={surfaceClasses("muted")}>
+            <p className="text-sm">
               👻 {isSpectator
-                  ? "You joined as a spectator and are observing the game."
-                  : "You are eliminated and observing as a ghost."}
+                  ? "You joined as a spectator and can observe the voting."
+                  : "You are eliminated and observing the town's decisions."}
             </p>
           </div>
         );
@@ -156,28 +195,26 @@ export function ActionCenter({ game, viewerId, messages, onVote, onClearVote, on
           game.dayEliminationState.leadingCandidateUid === viewerId &&
           !game.dayEliminationState.eliminated) {
         return (
-          <Card className="border-destructive bg-destructive/5">
-            <CardContent className="space-y-3 p-4">
-              <p className="text-sm font-semibold text-destructive">
-                ⚠️ You have the most votes ({game.dayEliminationState.leadingVoteCount})
-              </p>
-              <p className="text-sm text-muted-foreground">
-                You have a chance to defend yourself. Make your final statement in the chat before the host makes their decision.
-              </p>
-            </CardContent>
-          </Card>
+          <div className={surfaceClasses("danger")}>
+            <p className="text-sm font-semibold">
+              ⚠️ You have the most votes ({game.dayEliminationState.leadingVoteCount})
+            </p>
+            <p className="text-sm opacity-80">
+              Make your final statement in the chat before the host locks in their decision.
+            </p>
+          </div>
         );
       }
 
       // Check if voting is complete but viewer is not the target
       if (game.dayEliminationState?.votingComplete && !game.dayEliminationState.eliminated) {
         return (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              All votes are in. {game.dayEliminationState.leadingCandidateName} has the most votes with {game.dayEliminationState.leadingVoteCount} votes.
+          <div className={surfaceClasses("muted")}>
+            <p className="text-sm">
+              All votes are in. {game.dayEliminationState.leadingCandidateName} leads with {game.dayEliminationState.leadingVoteCount} votes.
             </p>
-            <p className="text-xs text-muted-foreground">
-              Waiting for the host to make the elimination decision.
+            <p className="text-xs opacity-70">
+              Waiting for the host to confirm the elimination.
             </p>
           </div>
         );
@@ -189,59 +226,57 @@ export function ActionCenter({ game, viewerId, messages, onVote, onClearVote, on
     // Ended phase
     if (game.phase === "ended") {
       return (
-        <Card className="border-primary bg-primary/5">
-          <CardContent className="space-y-3 p-4">
-            <p className="text-lg font-bold text-primary">
-              {game.lastAction || "🏆 Game has ended"}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Check the activity timeline for final results and role reveals.
-            </p>
-          </CardContent>
-        </Card>
+        <div className={surfaceClasses("muted")}>
+          <p className="text-lg font-semibold">
+            {game.lastAction || "🏆 Game has ended"}
+          </p>
+          <p className="text-sm opacity-80">
+            Review the activity timeline for the full story and role reveals.
+          </p>
+        </div>
       );
     }
 
     return null;
   };
 
+  const containerClasses = cn(
+    "flex flex-col gap-6",
+    variant === "desktop"
+      ? "sticky top-6 rounded-3xl bg-surface p-6 shadow-lg ring-1 ring-border/60"
+      : "rounded-2xl border border-border/60 bg-background/80 p-4 shadow-sm"
+  );
+
   return (
-    <Card className="sticky top-4">
-      <CardContent className="space-y-4 p-4">
-        <PhaseIndicator phase={game.phase} round={game.round} />
+    <section className={containerClasses}>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start justify-between gap-3">
+          <PhaseIndicator phase={game.phase} round={game.round} variant={variant === "desktop" ? "minimal" : "default"} />
+          <TimerDisplay deadline={game.phaseEndsAt} variant={variant === "desktop" ? "minimal" : "default"} />
+        </div>
         <RoleReminder
           role={viewerRole}
           isAlive={viewerAlive}
           isRevealed={viewer.detectiveRevealed}
         />
-        
-        {/* Latest Narrator Event */}
-        {latestNarratorMessage && game.phase !== "lobby" && (
-          <Card className="border-primary/30 bg-primary/5">
-            <CardContent className="p-3">
-              <div className="flex items-start gap-2">
-                <span className="text-lg">📖</span>
-                <div className="flex-1">
-                  <p className="text-xs font-medium text-primary">Latest Story Event</p>
-                  <p className="mt-1 text-sm text-foreground">{latestNarratorMessage.body}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-        
-        {renderActionPrompt()}
-        {game.phase === "day" && (
-          <VotingPanel
-            game={game}
-            viewerId={viewerId}
-            onVote={onVote}
-            onClear={onClearVote}
-            disabled={!viewerAlive}
-          />
-        )}
-        <TimerDisplay deadline={game.phaseEndsAt} />
-      </CardContent>
-    </Card>
+      </div>
+
+      {actionResults.length > 0 && (
+        <ActionResults items={actionResults} variant={variant === "desktop" ? "desktop" : "mobile"} />
+      )}
+
+      {renderActionPrompt()}
+
+      {game.phase === "day" && (
+        <VotingPanel
+          game={game}
+          viewerId={viewerId}
+          onVote={onVote}
+          onClear={onClearVote}
+          disabled={!viewerAlive}
+          variant={variant === "desktop" ? "desktop" : "mobile"}
+        />
+      )}
+    </section>
   );
 }

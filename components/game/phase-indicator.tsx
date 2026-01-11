@@ -5,6 +5,7 @@ import type { GamePhase } from "@/types/game";
 interface PhaseIndicatorProps {
   phase: GamePhase;
   round: number;
+  variant?: "default" | "minimal";
 }
 
 const PHASE_CONFIG: Record<GamePhase, {
@@ -39,10 +40,36 @@ const PHASE_CONFIG: Record<GamePhase, {
   },
 };
 
-export function PhaseIndicator({ phase, round }: PhaseIndicatorProps) {
+export function PhaseIndicator({ phase, round, variant = "default" }: PhaseIndicatorProps) {
   const config = PHASE_CONFIG[phase];
   const iconValue = config.icon;
   const isStringIcon = typeof iconValue === "string";
+
+  if (variant === "minimal") {
+    return (
+      <div className="flex items-center gap-3 rounded-full bg-white/5 px-5 py-3 text-white">
+        <div className="flex items-center justify-center rounded-full bg-white/10 p-2">
+          {isStringIcon ? (
+            <span className="text-lg leading-none">{iconValue}</span>
+          ) : (
+            (() => {
+              const IconComponent = iconValue;
+              return <IconComponent className="h-5 w-5" aria-hidden />;
+            })()
+          )}
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-white/50">
+            Phase
+          </span>
+          <span className="text-lg font-semibold tracking-tight">
+            {config.label.toLowerCase() === "lobby" ? "Lobby Setup" : config.label}
+            {phase !== "lobby" && phase !== "ended" ? ` · Round ${round}` : ""}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`rounded-lg border p-4 ${config.bgColor}`}>

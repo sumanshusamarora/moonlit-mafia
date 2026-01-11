@@ -232,7 +232,7 @@ export const joinGameByCode = async (payload: JoinGamePayload) => {
     isHost: false,
     joinedAt: Date.now(),
     ready: false,
-    isSpectator: isGameStarted || isGameFinished ? true : undefined, // Mark as spectator if joining mid-game or after game ends
+    isSpectator: Boolean(isGameStarted || isGameFinished), // Mark as spectator if joining mid-game or after game ends
   };
 
   await updateDoc(gameDoc.ref, {

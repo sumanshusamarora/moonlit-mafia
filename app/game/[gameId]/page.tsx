@@ -6,17 +6,17 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { PlayerList } from "@/components/game/player-list";
 import { PlayerListCompact } from "@/components/game/player-list-compact";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { ActionCenter } from "@/components/game/action-center";
 import { ActivityTimeline } from "@/components/game/activity-timeline";
-import { MobileTabs, TabPanel } from "@/components/ui/tabs-mobile";
+import { MobileTabs } from "@/components/ui/tabs-mobile";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { FloatingActionButton } from "@/components/ui/floating-action-button";
 import { useGameRoom } from "@/hooks/use-game-room";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useUserSettings } from "@/hooks/use-user-settings";
+import { useGameEvents } from "@/hooks/use-game-events";
 import { uploadVoiceMessage } from "@/lib/firebase/storage";
 import {
   advancePhase,
@@ -33,9 +33,18 @@ import {
   syncPhaseDeadline,
 } from "@/lib/game/service";
 import { toast } from "sonner";
-import { Loader2Icon, MoonIcon, SunIcon, UsersIcon, MessageSquareIcon, ActivityIcon, SettingsIcon } from "lucide-react";
+import { Loader2Icon, MoonIcon, SunIcon, UsersIcon, ActivityIcon, SettingsIcon } from "lucide-react";
 import { SettingsPanel } from "@/components/game/settings-panel";
-import { AdminControlPanel } from "@/components/game/admin-control-panel";
+import { PlayersPanel } from "@/components/game/players-panel";
+import { GameSurface } from "@/components/game/game-surface";
+import { ChatActionPanel } from "@/components/game/chat-action-panel";
+import type { InvestigationHistoryItem } from "@/components/game/action-prompts/detective-action-prompt";
+import type { ActionResultItem } from "@/components/game/action-results";
+import type {
+  DetectiveInvestigationEventData,
+  NightOutcomeEventData,
+  DayEliminationEventData,
+} from "@/types/events";
 
 export default function GameRoomPage() {
   const params = useParams<{ gameId: string }>();
@@ -43,14 +52,30 @@ export default function GameRoomPage() {
   const { game, messages, loading } = useGameRoom(gameId ?? null);
   const { user } = useAuth();
   const { settings } = useUserSettings();
+  const { events } = useGameEvents(gameId ?? null);
   const [isBusy, setIsBusy] = useState(false);
   const [timerBusy, setTimerBusy] = useState(false);
   const [automationReadyEnabled, setAutomationReadyEnabled] = useState(false);
   const [activeTab, setActiveTab] = useState("game");
+  const [phaseCountdown, setPhaseCountdown] = useState("--:--");
+  const [utilityTab, setUtilityTab] = useState("chat");
+  const [testModeViewerUid, setTestModeViewerUid] = useState<string | null>(null);
 
   const viewerId = user?.uid ?? "";
   const viewer = useMemo(() => game?.players.find((player) => player.uid === viewerId), [game, viewerId]);
   const isHost = viewer?.isHost ?? false;
+
+  const effectiveViewerId = useMemo(() => {
+    if (!game?.isTestMode || !isHost) {
+      return viewerId;
+    }
+
+    if (testModeViewerUid && game.players.some((player) => player.uid === testModeViewerUid)) {
+      return testModeViewerUid;
+    }
+
+    return viewerId;
+  }, [game, isHost, testModeViewerUid, viewerId]);
   const autoGameId = game?.id ?? null;
   const autoPhase = game?.phase ?? null;
   const autoViewerId = viewer?.uid ?? null;
@@ -60,6 +85,192 @@ export default function GameRoomPage() {
     // Simple unread count - could be enhanced with localStorage tracking
     return messages.filter(m => m.createdAt > (Date.now() - 60000)).length;
   }, [messages]);
+
+  const detectiveHistoryByDetectiveUid = useMemo(() => {
+    const map = new Map<string, InvestigationHistoryItem[]>();
+    if (!events?.length) {
+      return map;
+    }
+
+    for (const event of events) {
+      if (event.type !== "detective-investigation") {
+        continue;
+      }
+
+      const data = event.data as DetectiveInvestigationEventData;
+      const detectiveUid = data.detectiveUid;
+      if (!detectiveUid) {
+        continue;
+      }
+
+      const list = map.get(detectiveUid) ?? [];
+      list.push({
+        id: event.id,
+        targetUid: data.targetUid,
+        targetName: data.targetName,
+        isMafia: data.isMafia,
+        round: event.round,
+        timestamp: event.timestamp,
+      });
+      map.set(detectiveUid, list);
+    }
+
+    for (const [uid, list] of map.entries()) {
+      list.sort((a, b) => b.timestamp - a.timestamp);
+      map.set(uid, list);
+    }
+
+    return map;
+  }, [events]);
+
+  const detectiveHistory = useMemo<InvestigationHistoryItem[]>(() => {
+    return detectiveHistoryByDetectiveUid.get(effectiveViewerId) ?? [];
+  }, [detectiveHistoryByDetectiveUid, effectiveViewerId]);
+
+  const actionResults = useMemo<ActionResultItem[]>(() => {
+    if (!game) {
+      return [];
+    }
+
+    if (game.phase === "lobby") {
+      return [];
+    }
+
+    const viewerPlayer = game.players.find((player) => player.uid === effectiveViewerId) ?? viewer;
+    const results: ActionResultItem[] = [];
+    const eventList = events ?? [];
+    const currentRound = Math.max(0, game.round ?? 0);
+    const eligibleRounds = new Set<number>();
+    if (currentRound > 0) {
+      eligibleRounds.add(currentRound);
+      if (currentRound - 1 > 0) {
+        eligibleRounds.add(currentRound - 1);
+      }
+    }
+
+    const includeEvent = (round: number) => {
+      if (!eligibleRounds.size) {
+        return true;
+      }
+      return eligibleRounds.has(round);
+    };
+
+    const latestNightOutcome = eventList.find(
+      (event) => event.type === "night-outcome" && includeEvent(event.round)
+    );
+
+    if (latestNightOutcome) {
+      const data = latestNightOutcome.data as NightOutcomeEventData;
+      let description = "Night passed without incident.";
+      let tone: ActionResultItem["tone"] = "neutral";
+
+      if (data.savedByDoctor) {
+        description = "Doctor prevented an elimination during the night.";
+        tone = "success";
+      } else if (data.eliminatedName) {
+        description = `${data.eliminatedName} was eliminated overnight.`;
+        if (data.eliminatedRole) {
+          description += ` Role revealed: ${data.eliminatedRole}.`;
+        }
+        tone = "danger";
+      }
+
+      results.push({
+        id: `night-${latestNightOutcome.id}`,
+        icon: "🌙",
+        title: "Night Resolution",
+        description,
+        meta: `Night ${latestNightOutcome.round}`,
+        tone,
+        timestamp: latestNightOutcome.timestamp,
+      });
+    }
+
+    const latestDayElimination = eventList.find(
+      (event) => event.type === "day-elimination" && includeEvent(event.round)
+    );
+
+    if (latestDayElimination) {
+      const data = latestDayElimination.data as DayEliminationEventData;
+      let description = `${data.eliminatedName} was voted out.`;
+      if (data.eliminatedRole) {
+        description += ` Role revealed: ${data.eliminatedRole}.`;
+      }
+      description += ` Final vote count: ${data.voteCount}.`;
+
+      results.push({
+        id: `day-${latestDayElimination.id}`,
+        icon: "☀️",
+        title: "Day Elimination",
+        description,
+        meta: `Day ${latestDayElimination.round}`,
+        tone: "danger",
+        timestamp: latestDayElimination.timestamp,
+      });
+    }
+
+    if (viewerPlayer?.role === "detective") {
+      const latestDetective = detectiveHistory.find((entry) => includeEvent(entry.round));
+
+      if (latestDetective) {
+        results.push({
+          id: `detective-${latestDetective.id}`,
+          icon: "🕵️",
+          title: "Detective Result",
+          description: `You investigated ${latestDetective.targetName}. Result: ${latestDetective.isMafia ? "Mafia" : "Not Mafia"}.`,
+          meta: `Round ${latestDetective.round}`,
+          tone: latestDetective.isMafia ? "danger" : "success",
+          timestamp: latestDetective.timestamp,
+        });
+      } else if (game.nightState?.detectiveResult?.targetUid) {
+        const fallbackTarget = game.players.find(
+          (player) => player.uid === game.nightState?.detectiveResult?.targetUid
+        );
+        if (fallbackTarget) {
+          const directResult = game.nightState.detectiveResult;
+          results.push({
+            id: `detective-live-${directResult.targetUid}`,
+            icon: "🕵️",
+            title: "Detective Result",
+            description: `You investigated ${fallbackTarget.name}. Result: ${directResult.isMafia ? "Mafia" : "Not Mafia"}.`,
+            meta: "Pending event log",
+            tone: directResult.isMafia ? "danger" : "success",
+            timestamp: directResult.revealedAt,
+          });
+        }
+      }
+    }
+
+    const narratorMessages = (messages ?? [])
+      .filter((msg) => msg.authorUid === "system" && msg.authorName === "Narrator")
+      .sort((a, b) => b.createdAt - a.createdAt);
+
+    const latestNarrator = narratorMessages[0];
+    if (latestNarrator) {
+      results.push({
+        id: `narrator-${latestNarrator.id}`,
+        icon: "📖",
+        title: "Narrator Update",
+        description: latestNarrator.body,
+        meta: "Narrator",
+        tone: "info",
+        timestamp: latestNarrator.createdAt,
+      });
+    }
+
+    return results.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+  }, [game, events, messages, viewer, detectiveHistory, effectiveViewerId]);
+
+  useEffect(() => {
+    if (!game?.isTestMode || !isHost) {
+      setTestModeViewerUid(null);
+      return;
+    }
+
+    if (testModeViewerUid && !game.players.some((player) => player.uid === testModeViewerUid)) {
+      setTestModeViewerUid(null);
+    }
+  }, [game?.isTestMode, game?.players, isHost, testModeViewerUid]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -73,6 +284,39 @@ export default function GameRoomPage() {
       console.error("Automation failed to toggle ready state", error);
     });
   }, [automationReadyEnabled, autoGameId, autoPhase, autoViewerId, autoViewerReady]);
+
+  useEffect(() => {
+    if (!game?.phaseEndsAt) {
+      setPhaseCountdown("--:--");
+      return;
+    }
+
+    const updateCountdown = () => {
+      if (!game?.phaseEndsAt) {
+        setPhaseCountdown("--:--");
+        return;
+      }
+      const diff = Math.max(0, game.phaseEndsAt - Date.now());
+      const totalSeconds = Math.floor(diff / 1000);
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      setPhaseCountdown(`${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`);
+    };
+
+    updateCountdown();
+    const interval = window.setInterval(updateCountdown, 1000);
+    return () => window.clearInterval(interval);
+  }, [game?.phaseEndsAt, game?.phase]);
+
+  useEffect(() => {
+    if (utilityTab === "host" && !isHost) {
+      setUtilityTab("chat");
+      return;
+    }
+    if (utilityTab === "test" && (!isHost || !game?.isTestMode)) {
+      setUtilityTab("chat");
+    }
+  }, [utilityTab, isHost, game?.isTestMode]);
 
   const handleReadyToggle = async () => {
     if (!game || !viewer) return;
@@ -183,10 +427,34 @@ export default function GameRoomPage() {
     }
   };
 
+  const handleVoteAs = async (voterUid: string, targetUid: string) => {
+    if (!game) return;
+    try {
+      await submitVote(game.id, {
+        targetUid,
+        voterUid,
+        createdAt: Date.now(),
+      });
+    } catch (error) {
+      toast.error("Unable to submit vote");
+      console.error(error);
+    }
+  };
+
   const handleClearVote = async () => {
     if (!game || !viewer) return;
     try {
       await clearVote(game.id, viewer.uid);
+    } catch (error) {
+      toast.error("Unable to clear vote");
+      console.error(error);
+    }
+  };
+
+  const handleClearVoteAs = async (voterUid: string) => {
+    if (!game) return;
+    try {
+      await clearVote(game.id, voterUid);
     } catch (error) {
       toast.error("Unable to clear vote");
       console.error(error);
@@ -360,12 +628,27 @@ export default function GameRoomPage() {
   const timerControlsEnabled = isHost && (game.phase === "day" || game.phase === "night");
   const viewerIsDead = viewer ? !viewer.isAlive : false;
   const viewerRole = viewer?.role ?? null;
+  const phaseLabel =
+    game.phase === "day"
+      ? "Day"
+      : game.phase === "night"
+      ? "Night"
+      : game.phase === "lobby"
+      ? "Lobby Setup"
+      : "Game Over";
   
   const tabs = [
     { id: "game", label: "Game", icon: <ActivityIcon className="h-4 w-4" />, badge: unreadMessages },
     { id: "players", label: "Players", icon: <UsersIcon className="h-4 w-4" />, badge: game.players.filter(p => p.isAlive).length },
     { id: "settings", label: "Settings", icon: <SettingsIcon className="h-4 w-4" /> },
     ...(isHost ? [{ id: "host", label: "Host", icon: <SettingsIcon className="h-4 w-4" /> }] : []),
+  ];
+
+  const desktopUtilityTabs = [
+    { value: "chat", label: "Chat", badge: unreadMessages },
+    { value: "activity", label: "Activity" },
+    ...(isHost ? [{ value: "host", label: "Host" }] : []),
+    { value: "settings", label: "Settings" },
   ];
 
   // Primary action for FAB
@@ -390,21 +673,227 @@ export default function GameRoomPage() {
 
   const primaryAction = getPrimaryAction();
 
+  const renderUtilityPanel = () => {
+    switch (utilityTab) {
+      case "host":
+        if (!isHost) {
+          return (
+            <p className="text-sm text-white/60">
+              Host controls are only available to the game host.
+            </p>
+          );
+        }
+
+        return (
+          <div className="space-y-4 text-slate-100">
+            {game.phase === "ended" && (
+              <div className="space-y-2 rounded-2xl border border-border/60 bg-muted/20 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-textSecondary">
+                  Start a new game
+                </p>
+                <p className="text-sm text-textSecondary">
+                  Restart the lobby with everyone currently in this room.
+                </p>
+                <Button
+                  size="sm"
+                  className="w-full"
+                  variant="outline"
+                  onClick={handleRestartLobby}
+                  disabled={isBusy}
+                >
+                  Restart with current players
+                </Button>
+              </div>
+            )}
+            {game.phase === "lobby" && (
+              <Button
+                size="sm"
+                className="w-full"
+                onClick={handleStart}
+                disabled={!everyoneReady || isBusy}
+                data-testid="start-game-button"
+              >
+                {isBusy ? "Starting..." : "Start game"}
+              </Button>
+            )}
+
+            {game.phase === "day" &&
+              game.dayEliminationState?.votingComplete &&
+              !game.dayEliminationState.eliminated &&
+              game.dayEliminationState.leadingCandidateUid && (
+                <div className="space-y-2 rounded-2xl border border-red-500/40 bg-red-500/15 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.3em] text-red-200">
+                    Elimination required
+                  </p>
+                  <p className="text-sm">
+                    {game.dayEliminationState.leadingCandidateName} leads with {game.dayEliminationState.leadingVoteCount} votes.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    className="w-full"
+                    onClick={() => handleEliminate(game.dayEliminationState!.leadingCandidateUid!)}
+                    disabled={isBusy}
+                  >
+                    Eliminate {game.dayEliminationState.leadingCandidateName}
+                  </Button>
+                </div>
+              )}
+
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/50">Phase controls</p>
+              {game.phase !== "ended" && game.phase !== "lobby" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full border-white/20 text-white hover:bg-white/10"
+                  onClick={handleAdvancePhase}
+                  disabled={
+                    (game.phase === "day" &&
+                      game.dayEliminationState?.votingComplete &&
+                      !game.dayEliminationState.eliminated) ||
+                    isBusy
+                  }
+                  data-testid="advance-phase-button"
+                >
+                  {game.phase === "day" ? (
+                    <>
+                      <MoonIcon className="mr-2 h-4 w-4" aria-hidden />
+                      Enter night
+                    </>
+                  ) : (
+                    <>
+                      <SunIcon className="mr-2 h-4 w-4" aria-hidden />
+                      Enter day
+                    </>
+                  )}
+                </Button>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/50">Timer</p>
+              {timerControlsEnabled ? (
+                <div className="grid gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full border-white/20 text-white hover:bg-white/10"
+                    onClick={() => handleExtendTimer(30000)}
+                    disabled={timerBusy}
+                  >
+                    Extend +30s
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full border-white/20 text-white hover:bg-white/10"
+                    onClick={handleResetTimer}
+                    disabled={timerBusy}
+                  >
+                    Reset timer
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-white/60">
+                  Timer controls unlock during day and night phases.
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/50">Game management</p>
+              <div className="grid gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full border-white/20 text-white hover:bg-white/10"
+                  onClick={handleRestartLobby}
+                  disabled={isBusy}
+                  data-testid="restart-lobby-button"
+                >
+                  Restart lobby
+                </Button>
+                {viewer?.isAlive && !game.hostPeeked && game.phase !== "lobby" && game.phase !== "ended" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full border-red-400/60 text-red-200 hover:border-red-300 hover:bg-red-500/10"
+                    onClick={handlePeekRoles}
+                    disabled={isBusy}
+                    data-testid="peek-roles-button"
+                  >
+                    Peek at roles
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full border-white/20 text-white hover:bg-white/10"
+                  onClick={handleArchive}
+                >
+                  Archive game
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+
+      case "activity":
+        return (
+          <div className="space-y-3">
+            <ActivityTimeline gameId={game.id} />
+          </div>
+        );
+
+      case "settings":
+        return <SettingsPanel />;
+
+      default:
+        return null;
+    }
+  };
+
   return (
     <AppShell
       headerSlot={
-        <div className="flex items-center gap-3">
-          {game.isTestMode && (
-            <Badge variant="outline" className="border-yellow-500 bg-yellow-500/10 text-yellow-600">
-              🧪 TEST MODE
-            </Badge>
-          )}
-          <Badge variant="secondary" data-testid="game-code-display">
-            Code: {game.code}
-          </Badge>
-          <Button size="sm" variant="outline" onClick={copyCode}>
-            Copy code
-          </Button>
+        <div className="flex w-full flex-wrap items-center justify-between gap-4 rounded-3xl bg-surface px-6 py-4 text-textPrimary shadow-lg ring-1 ring-border/60">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.4em] text-textSecondary">
+              Moonlit Mafia
+            </p>
+            <div className="flex flex-wrap items-baseline gap-3">
+              <h1 className="text-2xl font-semibold tracking-tight text-textPrimary">{phaseLabel}</h1>
+              {game.phase !== "lobby" && game.phase !== "ended" && (
+                <span className="text-sm text-textSecondary">Round {game.round}</span>
+              )}
+              <span className="text-sm text-textSecondary">Host · {game.hostName}</span>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {game.isTestMode && (
+              <Badge variant="outline" className="border-warning/50 bg-warning/10 text-textPrimary">
+                🧪 Test Mode
+              </Badge>
+            )}
+            <div className="flex items-center gap-2 rounded-full bg-muted/20 px-4 py-2">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-textSecondary">
+                Time
+              </span>
+              <span className="font-mono text-lg font-semibold tracking-tight text-textPrimary">
+                {phaseCountdown}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 rounded-full bg-muted/20 px-4 py-2" data-testid="game-code-display">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.3em] text-textSecondary">
+                Code
+              </span>
+              <span className="font-semibold text-textPrimary">{game.code}</span>
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={copyCode}>
+                Copy
+              </Button>
+            </div>
+          </div>
         </div>
       }
     >
@@ -436,14 +925,19 @@ export default function GameRoomPage() {
               <ActionCenter 
                 game={game} 
                 viewerId={viewerId}
-                messages={messages}
                 onVote={handleVote}
                 onClearVote={handleClearVote}
                 onReadyToggle={handleReadyToggle}
+                investigationHistory={detectiveHistory}
+                variant="mobile"
+                actionResults={actionResults}
               />
-              
-              {/* Admin Control Panel in Test Mode */}
-              {game.isTestMode && isHost && <AdminControlPanel game={game} />}
+
+              {game.isTestMode && !isHost && (
+                <div className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-sm text-textSecondary">
+                  Test Mode is active. The host may simulate actions to fast-forward the story.
+                </div>
+              )}
               
               {/* Chat Panel */}
               <div className="h-[400px]">
@@ -567,6 +1061,15 @@ export default function GameRoomPage() {
                         <p className="text-xs text-muted-foreground">
                           {game.lastAction || "The game has concluded."}
                         </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full"
+                          onClick={handleRestartLobby}
+                          disabled={isBusy}
+                        >
+                          Restart with current players
+                        </Button>
                         <Button 
                           size="sm" 
                           variant="outline" 
@@ -660,183 +1163,36 @@ export default function GameRoomPage() {
       </div>
 
       {/* Desktop Layout (lg and above) */}
-      <div className="hidden space-y-6 lg:block">
-        {/* New Layout: 3-column grid on desktop */}
-        <section className="grid gap-6 lg:grid-cols-[300px,1fr] xl:grid-cols-[300px,1fr,380px]">
-          
-          {/* Left Column: Players + Host Controls (Sticky) */}
-          <aside className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-semibold">Players</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  {game.players.filter((p) => p.isAlive).length} alive • {game.players.length} total
-                </p>
-              </CardHeader>
-              <CardContent>
-                <PlayerList
-                  players={game.players}
-                  viewerId={viewerId}
-                  viewerIsDead={viewerIsDead || game.phase === "ended"}
-                  viewerRole={viewerRole}
-                  revealDeadRoles={game.config.revealRolesOnDeath || game.phase === "ended"}
-                />
-              </CardContent>
-            </Card>
-            {/* Host Controls */}
-            {isHost && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-sm font-semibold">Host Controls</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  {game.phase === "lobby" && (
-                    <Button
-                      size="sm"
-                      className="w-full"
-                      onClick={handleStart}
-                      disabled={!everyoneReady || isBusy}
-                      data-testid="start-game-button"
-                    >
-                      {isBusy ? "Starting..." : "Start game"}
-                    </Button>
-                  )}
-                  
-                  {/* Day Elimination Control */}
-                  {game.phase === "day" && 
-                   game.dayEliminationState?.votingComplete && 
-                   !game.dayEliminationState.eliminated &&
-                   game.dayEliminationState.leadingCandidateUid && (
-                    <div className="space-y-2 rounded-lg border border-destructive/50 bg-destructive/5 p-3">
-                      <p className="text-xs font-medium text-destructive">
-                        Elimination Required
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {game.dayEliminationState.leadingCandidateName} has {game.dayEliminationState.leadingVoteCount} votes
-                      </p>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        className="w-full"
-                        onClick={() => handleEliminate(game.dayEliminationState!.leadingCandidateUid!)}
-                        disabled={isBusy}
-                      >
-                        Eliminate {game.dayEliminationState.leadingCandidateName}
-                      </Button>
-                    </div>
-                  )}
-                  
-                  {game.phase !== "ended" && game.phase !== "lobby" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full"
-                      onClick={handleAdvancePhase}
-                      disabled={
-                        (game.phase === "day" && 
-                         game.dayEliminationState?.votingComplete && 
-                         !game.dayEliminationState.eliminated) || 
-                        isBusy
-                      }
-                      data-testid="advance-phase-button"
-                    >
-                      {game.phase === "day" ? (
-                        <>
-                          <MoonIcon className="mr-2 h-4 w-4" aria-hidden />
-                          Enter night
-                        </>
-                      ) : (
-                        <>
-                          <SunIcon className="mr-2 h-4 w-4" aria-hidden />
-                          Enter day
-                        </>
-                      )}
-                    </Button>
-                  )}
-                  {timerControlsEnabled && (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => handleExtendTimer(30000)}
-                        disabled={timerBusy}
-                      >
-                        Extend +30s
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="w-full"
-                        onClick={handleResetTimer}
-                        disabled={timerBusy}
-                      >
-                        Reset Timer
-                      </Button>
-                    </>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full"
-                    onClick={handleRestartLobby}
-                    disabled={isBusy}
-                    data-testid="restart-lobby-button"
-                  >
-                    Restart lobby
-                  </Button>
-                  {viewer?.isAlive && !game.hostPeeked && game.phase !== "lobby" && game.phase !== "ended" && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full border-destructive/50 text-destructive hover:border-destructive hover:bg-destructive/10"
-                      onClick={handlePeekRoles}
-                      disabled={isBusy}
-                      data-testid="peek-roles-button"
-                    >
-                      Peek at roles
-                    </Button>
-                  )}
-                  {game.phase === "ended" && (
-                    <div className="space-y-2 rounded-lg border border-primary/50 bg-primary/5 p-3">
-                      <p className="text-sm font-semibold text-primary">
-                        🏆 Game Ended
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {game.lastAction || "The game has concluded."}
-                      </p>
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        className="w-full" 
-                        onClick={handleArchive}
-                      >
-                        Archive Game
-                      </Button>
-                    </div>
-                  )}
-                  {game.phase !== "ended" && (
-                    <Button size="sm" variant="outline" className="w-full" onClick={handleArchive}>
-                      Archive
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            )}
+      <div className="hidden gap-6 lg:grid lg:grid-cols-[320px,minmax(0,1fr),400px] xl:grid-cols-[340px,minmax(0,1fr),420px]">
+        <PlayersPanel
+          game={game}
+          viewerId={viewerId}
+          viewerRole={viewerRole}
+          viewerIsDead={viewerIsDead || game.phase === "ended"}
+          revealDeadRoles={game.config.revealRolesOnDeath || game.phase === "ended"}
+          isHost={isHost}
+          selectedPlayerUid={testModeViewerUid}
+          onSelectPlayerUid={setTestModeViewerUid}
+        />
 
-            {/* Settings Panel - Available to all users on desktop */}
-            <SettingsPanel />
-          </aside>
+        <GameSurface
+          game={game}
+          viewerId={viewerId}
+          activePlayerUid={effectiveViewerId}
+          investigationHistory={detectiveHistory}
+          actionResults={actionResults}
+          onVote={handleVote}
+          onVoteAs={handleVoteAs}
+          onClearVote={handleClearVote}
+          onClearVoteAs={handleClearVoteAs}
+          onReadyToggle={handleReadyToggle}
+        />
 
-          {/* Center Column: Action Center + Admin Panel + Activity Timeline */}
-          <div className="space-y-6">
-            <ActionCenter game={game} viewerId={viewerId} messages={messages} onVote={handleVote} onClearVote={handleClearVote} onReadyToggle={handleReadyToggle} />
-            {game.isTestMode && isHost && <AdminControlPanel game={game} />}
-            <ActivityTimeline gameId={game.id} />
-          </div>
-
-          {/* Right Column: Chat (Desktop only, hidden on mobile/tablet) */}
-          <aside className="hidden space-y-6 xl:block">
+        <ChatActionPanel
+          tabs={desktopUtilityTabs}
+          activeTab={utilityTab}
+          onTabChange={setUtilityTab}
+          chatPanel={
             <ChatPanel
               messages={messages}
               onSend={handleSendMessage}
@@ -846,9 +1202,11 @@ export default function GameRoomPage() {
               autoplayEnabled={settings.autoplayVoiceMessages}
               game={game}
               viewerId={viewerId}
+              variant="minimal"
             />
-          </aside>
-        </section>
+          }
+          utilityPanel={utilityTab === "chat" ? null : renderUtilityPanel()}
+        />
       </div>
     </AppShell>
   );

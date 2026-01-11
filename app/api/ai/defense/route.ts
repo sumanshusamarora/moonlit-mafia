@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { GameRole, MafiaGame } from "@/types/game";
+import fs from "node:fs";
+import path from "node:path";
 
 interface DefenseRequest {
   gameState: MafiaGame;
@@ -9,6 +11,10 @@ interface DefenseRequest {
 export async function POST(request: NextRequest) {
   try {
     const apiKey = process.env.OPENAI_API_KEY;
+    const openaiBaseUrl = process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
+    const model = process.env.OPENAI_DEFENSE_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini";
+    const openaiOrgId = process.env.OPENAI_ORG_ID;
+    const openaiProjectId = process.env.OPENAI_PROJECT_ID;
     
     // Feature gate: If no API key, return 404 to make feature invisible
     if (!apiKey) {
@@ -17,6 +23,8 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
+
+    const keyMismatch = detectLocalEnvKeyMismatch(apiKey);
 
     const body: DefenseRequest = await request.json();
     const { gameState, playerUid } = body;
@@ -37,46 +45,84 @@ export async function POST(request: NextRequest) {
     }
 
     const prompt = buildDefensePrompt(gameState, player);
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-5-mini",
-        messages: [
-          {
-            role: "system",
-            content: `You are an assistant helping a player in a Mafia game defend themselves.
+    const systemInstructions = `You are an assistant helping a player in a Mafia game defend themselves.
 Your goal is to generate a short, realistic, and logical spoken-style defense.
 Do not sound robotic or omniscient.
 Do not reveal hidden information.
 Do not claim certainty.
 Keep it under 4–5 sentences.
-Sound like a real human under pressure.`
+Sound like a real human under pressure.`;
+
+    const response = await fetch(`${openaiBaseUrl}/responses`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+        ...(openaiOrgId ? { "OpenAI-Organization": openaiOrgId } : null),
+        ...(openaiProjectId ? { "OpenAI-Project": openaiProjectId } : null),
+      },
+      body: JSON.stringify({
+        model,
+        input: [
+          {
+            role: "system",
+            content: [{ type: "input_text", text: systemInstructions }],
           },
           {
             role: "user",
-            content: prompt
-          }
+            content: [{ type: "input_text", text: prompt }],
+          },
         ],
-        max_tokens: 150,
+        max_output_tokens: 180,
         temperature: 0.8,
       }),
     });
 
     if (!response.ok) {
-      console.error("OpenAI API request failed:", response.status);
+      const errorText = await response.text();
+      console.error("OpenAI API request failed:", response.status, errorText);
+
+      let message: string | undefined;
+      let code: string | undefined;
+      try {
+        const parsed = JSON.parse(errorText) as { error?: { message?: string; code?: string } };
+        message = parsed?.error?.message;
+        code = parsed?.error?.code;
+      } catch {
+        // Ignore parse errors; we log raw text above.
+      }
+
+      if (response.status === 429 && code === "insufficient_quota") {
+        return NextResponse.json(
+          {
+            error: "OpenAI quota exceeded",
+            status: response.status,
+            message:
+              message ??
+              "OpenAI reported insufficient quota. Check your plan, billing, and usage limits.",
+            ...(keyMismatch
+              ? {
+                  debug:
+                    "Detected a different OPENAI_API_KEY in .env.local than the one currently in process.env. A shell/exported key can override .env.local. Unset the shell OPENAI_API_KEY (or update it) and restart the dev server.",
+                }
+              : null),
+          },
+          { status: 402 }
+        );
+      }
+
       return NextResponse.json(
-        { error: "Failed to generate defense" },
-        { status: 500 }
+        {
+          error: "OpenAI API request failed",
+          status: response.status,
+          message: message ?? (errorText ? errorText.slice(0, 300) : undefined),
+        },
+        { status: 502 }
       );
     }
 
-    const data = await response.json();
-    const defense = data.choices[0]?.message?.content;
+    const data: unknown = await response.json();
+    const defense = extractResponseText(data);
 
     if (!defense) {
       return NextResponse.json(
@@ -93,6 +139,44 @@ Sound like a real human under pressure.`
       { status: 500 }
     );
   }
+}
+
+function detectLocalEnvKeyMismatch(activeApiKey: string): boolean {
+  if (process.env.NODE_ENV === "production") return false;
+  try {
+    const envPath = path.join(process.cwd(), ".env.local");
+    const raw = fs.readFileSync(envPath, "utf8");
+    const match = raw.match(/^OPENAI_API_KEY=(.*)$/m);
+    if (!match) return false;
+    const fileKey = match[1].trim();
+    if (!fileKey) return false;
+    return fileKey !== activeApiKey;
+  } catch {
+    return false;
+  }
+}
+
+function extractResponseText(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const output = (data as { output?: unknown }).output;
+  if (!Array.isArray(output)) return null;
+
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue;
+    const type = (item as { type?: unknown }).type;
+    if (type !== "message") continue;
+    const content = (item as { content?: unknown }).content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      if ((part as { type?: unknown }).type === "output_text") {
+        const text = (part as { text?: unknown }).text;
+        if (typeof text === "string" && text.trim()) return text.trim();
+      }
+    }
+  }
+
+  return null;
 }
 
 function buildDefensePrompt(game: MafiaGame, player: { uid: string; name: string; role: GameRole | null }): string {

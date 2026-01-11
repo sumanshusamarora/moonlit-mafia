@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useGameEvents } from "@/hooks/use-game-events";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import type {
   GameEvent,
@@ -12,6 +13,7 @@ import type {
   VoteCastEventData,
   VoteChangedEventData,
   DetectiveRevealedEventData,
+  DetectiveInvestigationEventData,
   PhaseChangedEventData,
   GameStartedEventData,
 } from "@/types/events";
@@ -67,6 +69,8 @@ function EventCard({ event }: { event: GameEvent }) {
         return <VoteChangedEvent event={event} />;
       case "detective-revealed":
         return <DetectiveRevealedEvent event={event} />;
+      case "detective-investigation":
+        return <DetectiveInvestigationEvent event={event} />;
       case "phase-changed":
         return <PhaseChangedEvent event={event} />;
       default:
@@ -207,6 +211,32 @@ function DetectiveRevealedEvent({ event }: { event: GameEvent }) {
       {data.investigationsRemaining !== null && (
         <p className="text-xs text-muted-foreground">
           Investigations remaining: {data.investigationsRemaining}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function DetectiveInvestigationEvent({ event }: { event: GameEvent }) {
+  const data = event.data as unknown as DetectiveInvestigationEventData;
+  const toneClass = data.isMafia ? "text-red-600 dark:text-red-400" : "text-emerald-600 dark:text-emerald-400";
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-lg">🕵️</span>
+        <span className="font-semibold">Detective Investigation</span>
+        <Badge variant="outline">Round {event.round}</Badge>
+      </div>
+      <p className="text-sm">
+        <strong>{data.detectiveName}</strong> investigated <strong>{data.targetName}</strong>.
+      </p>
+      <p className={cn("text-sm font-medium", toneClass)}>
+        Result: {data.isMafia ? "Mafia" : "Not Mafia"}
+      </p>
+      {data.investigationsRemaining !== null && (
+        <p className="text-xs text-muted-foreground">
+          Checks remaining: {data.investigationsRemaining}
         </p>
       )}
     </div>

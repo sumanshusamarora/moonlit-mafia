@@ -2,7 +2,6 @@
 
 import { FormEvent, useMemo, useRef, useState, useCallback, useEffect } from "react";
 import type { GameMessage, MafiaGame } from "@/types/game";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -26,11 +25,12 @@ interface ChatPanelProps {
   autoplayEnabled?: boolean;
   game?: MafiaGame | null;
   viewerId?: string | null;
+  variant?: "default" | "minimal";
 }
 
 type VoiceSendState = 'idle' | 'recorded' | 'sending';
 
-export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, autoplayEnabled = false, game, viewerId }: ChatPanelProps) {
+export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, autoplayEnabled = false, game, viewerId, variant = "default" }: ChatPanelProps) {
   const [value, setValue] = useState("");
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
   const [voiceSendState, setVoiceSendState] = useState<VoiceSendState>('idle');
@@ -133,14 +133,31 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
     aiDefense.clearDraft();
   };
 
+  const containerClasses = variant === "minimal"
+    ? "flex h-full flex-col rounded-3xl bg-surface p-5 text-textPrimary shadow-lg ring-1 ring-border/60"
+    : "flex h-full flex-col rounded-xl border border-border/60 bg-background/80 px-4 pb-4 pt-3";
+
+  const headerTextClasses = variant === "minimal"
+    ? "text-sm font-semibold uppercase tracking-[0.35em] text-textSecondary"
+    : "text-base font-semibold capitalize";
+
+  const transcriptClasses = variant === "minimal"
+    ? "h-64 flex-1 overflow-y-auto rounded-2xl bg-muted/20 p-0.5 ring-1 ring-border/60"
+    : "h-64 flex-1 overflow-y-auto rounded-md border border-border/60 bg-background/60";
+
+  const messageClasses = variant === "minimal"
+    ? "flex flex-col gap-1 rounded-2xl bg-background/40 p-4 text-sm text-textSecondary"
+    : "flex flex-col gap-1 rounded-md border border-border/40 bg-background/80 p-3 text-sm";
+
   return (
-    <Card className="flex h-full flex-col">
-      <CardHeader>
-        <CardTitle className="text-base capitalize">
-          {disabled ? "👻 " : ""}{phase} chat{disabled ? " (Observer)" : ""}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="flex h-full flex-col gap-4">
+    <div className={containerClasses}>
+      <div className="mb-2 flex items-center justify-between">
+        <p className={headerTextClasses}>
+          {variant === "minimal" ? `${phase} chat`.toUpperCase() : `${disabled ? "👻 " : ""}${phase} chat${disabled ? " (Observer)" : ""}`}
+        </p>
+        {variant === "minimal" && disabled && <span className="text-xs text-white/50">Observer</span>}
+      </div>
+      <div className="flex h-full flex-col gap-4">
         <form onSubmit={handleSubmit} className="space-y-3">
           {autoplayBlocked && (
             <div className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
@@ -204,22 +221,19 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
             </Button>
           </div>
         </form>
-        <div
-          ref={viewportRef}
-          className="h-64 flex-1 overflow-y-auto rounded-md border border-border/60 bg-background/60"
-        >
+        <div ref={viewportRef} className={transcriptClasses}>
           <div className="flex flex-col gap-3 p-4">
             {sortedMessages.map((message, index) => {
               return (
                 <div
                   key={message.id || `${message.createdAt}-${message.authorUid}-${index}`}
                   className={cn(
-                    "flex flex-col gap-1 rounded-md border border-border/40 bg-background/80 p-3 text-sm",
-                    message.isSystem && "border-dashed text-muted-foreground"
+                    messageClasses,
+                    message.isSystem && (variant === "minimal" ? "border border-white/20 bg-transparent text-white/60" : "border-dashed text-muted-foreground")
                   )}
                 >
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground">{message.authorName}</span>
+                  <div className="flex items-center justify-between text-xs text-textSecondary">
+                    <span className="font-semibold text-textPrimary">{message.authorName}</span>
                     <span>{formatRelative(message.createdAt)}</span>
                   </div>
                   {message.voiceUrl ? (
@@ -235,7 +249,7 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
                     />
                   ) : (
                     <>
-                      <p>{message.body}</p>
+                      <p className="leading-relaxed">{message.body}</p>
                       {message.emoji && <span className="text-lg">{message.emoji}</span>}
                     </>
                   )}
@@ -247,8 +261,8 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
             )}
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 

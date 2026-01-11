@@ -37,6 +37,13 @@ export function VoiceRecorder({ onRecordingReady, disabled, isSending }: VoiceRe
     onRecordingReady(audioBlob);
   }, [audioBlob, onRecordingReady]);
 
+  // Clear the recording UI immediately when parent enters sending state
+  useEffect(() => {
+    if (isSending) {
+      deleteRecording();
+    }
+  }, [isSending, deleteRecording]);
+
   // Global release handlers - catch mouseup/touchend anywhere on the page
   // Using ref to avoid recreating this callback when isRecording changes
   const handleGlobalRelease = useCallback(() => {
