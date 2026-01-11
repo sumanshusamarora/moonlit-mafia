@@ -16,9 +16,10 @@ interface VotingPanelProps {
   onVote: (targetUid: string) => void;
   onClear: () => void;
   disabled?: boolean;
+  variant?: "desktop" | "mobile";
 }
 
-export function VotingPanel({ game, viewerId, onVote, onClear, disabled }: VotingPanelProps) {
+export function VotingPanel({ game, viewerId, onVote, onClear, disabled, variant = "mobile" }: VotingPanelProps) {
   const [expandedPlayers, setExpandedPlayers] = useState<Set<string>>(new Set());
   
   const votes = game.votes ?? [];
@@ -54,6 +55,18 @@ export function VotingPanel({ game, viewerId, onVote, onClear, disabled }: Votin
   };
 
   if (game.phase === "night") {
+    if (variant === "desktop") {
+      return (
+        <div className="rounded-2xl bg-white/5 p-4 text-sm text-slate-200 ring-1 ring-white/10">
+          {isViewerDead 
+            ? (isViewerSpectator 
+                ? "👻 You joined as a spectator. Observe the night quietly."
+                : "👻 You are observing as a ghost while night actions unfold.")
+            : "Voting resumes at dawn. Coordinate with your allies while the town sleeps."}
+        </div>
+      );
+    }
+
     return (
       <Card className="border border-dashed border-border/70 bg-background/60">
         <CardHeader>
@@ -72,30 +85,38 @@ export function VotingPanel({ game, viewerId, onVote, onClear, disabled }: Votin
     );
   }
 
+  const containerBase =
+    variant === "desktop"
+      ? "flex flex-col gap-4 rounded-2xl bg-white/5 p-5 text-slate-100 ring-1 ring-white/10"
+      : "rounded-lg border border-border/80 bg-background/70";
+
+  const headerClasses =
+    variant === "desktop"
+      ? "flex items-center justify-between"
+      : "flex items-center justify-between";
+
   return (
     <TooltipProvider>
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-base">
-              {isViewerDead ? (isViewerSpectator ? "👻 Day Voting (Spectator)" : "👻 Day Voting (Observer)") : "Day voting"}
-            </CardTitle>
-            <Badge variant={voteCast === totalVoters ? "default" : "secondary"}>
-              {voteCast}/{totalVoters} votes
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <div className={containerBase}>
+        <div className={headerClasses}>
+          <h3 className="text-base font-semibold">
+            {isViewerDead ? (isViewerSpectator ? "👻 Day Voting (Spectator)" : "👻 Day Voting (Observer)") : "Day voting"}
+          </h3>
+          <Badge variant={voteCast === totalVoters ? "default" : "secondary"}>
+            {voteCast}/{totalVoters} votes
+          </Badge>
+        </div>
+        <div className="space-y-3">
           {isViewerDead && (
-            <div className="rounded-lg border border-muted bg-muted/20 p-3 text-sm text-muted-foreground">
+            <div className={variant === "desktop" ? "rounded-xl bg-white/5 p-3 text-sm text-white/70" : "rounded-lg border border-muted bg-muted/20 p-3 text-sm text-muted-foreground"}>
               👻 {isViewerSpectator 
                   ? "You joined as a spectator. You can observe all votes but cannot participate in voting."
                   : "You are observing as a ghost. You can see all votes in real-time but cannot participate."}
             </div>
           )}
           {!isViewerDead && (
-            <p className="text-sm text-muted-foreground">
-              Cast a vote to eliminate a suspect. Voting resets automatically when the phase changes.
+            <p className={variant === "desktop" ? "text-sm text-white/70" : "text-sm text-muted-foreground"}>
+              Cast a vote to eliminate a suspect. Votes reset automatically when the phase changes.
             </p>
           )}
           <ul className="grid gap-2">
@@ -109,8 +130,10 @@ export function VotingPanel({ game, viewerId, onVote, onClear, disabled }: Votin
                 <li
                   key={player.uid}
                   className={cn(
-                    "rounded-lg border border-border/80 bg-background/70",
-                    isOwnVote && "border-primary/60 bg-primary/10"
+                    variant === "desktop"
+                      ? "rounded-xl border border-white/10 bg-white/5"
+                      : "rounded-lg border border-border/80 bg-background/70",
+                    isOwnVote && (variant === "desktop" ? "border-primary/50 bg-primary/15" : "border-primary/60 bg-primary/10")
                   )}
                 >
                   <div className="flex items-center justify-between p-3">
@@ -160,9 +183,10 @@ export function VotingPanel({ game, viewerId, onVote, onClear, disabled }: Votin
                     <Button
                       type="button"
                       size="sm"
-                      variant={isOwnVote ? "secondary" : "outline"}
+                      variant={isOwnVote ? "secondary" : variant === "desktop" ? "ghost" : "outline"}
                       onClick={() => onVote(player.uid)}
                       disabled={disabled}
+                      className={variant === "desktop" ? "w-full rounded-b-xl border-t border-white/10 bg-transparent text-white hover:bg-white/10" : ""}
                     >
                       {isOwnVote ? "You voted" : "Vote"}
                     </Button>
@@ -170,8 +194,8 @@ export function VotingPanel({ game, viewerId, onVote, onClear, disabled }: Votin
                 </div>
 
                 {(!isAnonymous || isViewerDead) && isExpanded && hasVotes && (
-                  <div className="border-t bg-muted/20 px-3 py-2">
-                    <p className="mb-2 text-xs font-medium text-muted-foreground">Voted by:</p>
+                  <div className={variant === "desktop" ? "border-t border-white/10 bg-white/5 px-3 py-2" : "border-t bg-muted/20 px-3 py-2"}>
+                    <p className={cn("mb-2 text-xs font-medium", variant === "desktop" ? "text-white/60" : "text-muted-foreground")}>Voted by:</p>
                     <ul className="space-y-1">
                       {data.voters.map((voterUid) => {
                         const voter = game.players.find((p) => p.uid === voterUid);
@@ -217,8 +241,8 @@ export function VotingPanel({ game, viewerId, onVote, onClear, disabled }: Votin
             Withdraw vote
           </Button>
         )}
-      </CardContent>
-    </Card>
+        </div>
+      </div>
     </TooltipProvider>
   );
 }

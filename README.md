@@ -85,9 +85,14 @@ Moonlit Mafia relies on Firebase for authentication, Firestore (real-time state)
 | `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | `messagingSenderId` value. |
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | `appId` from the config snippet. |
 | `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID` | Optional—only needed if you enabled Analytics. |
-| `OPENAI_API_KEY` | Optional—OpenAI API key for AI commentary. Game uses 30+ custom templates as fallback if not set. Uses gpt-4o-mini model for fast, cost-effective, dramatic narration. |
+| `OPENAI_API_KEY` | Optional—OpenAI API key for AI features (commentary + AI defense). If not set, AI defense is hidden and commentary falls back to templates. |
+| `OPENAI_MODEL` | Optional—server-side model override (no `NEXT_PUBLIC_` prefix needed). If you hit `insufficient_quota`, check OpenAI billing/limits. |
+| `OPENAI_ORG_ID` | Optional—sets `OpenAI-Organization` header for API requests. Useful if you belong to multiple orgs. |
+| `OPENAI_PROJECT_ID` | Optional—sets `OpenAI-Project` header for API requests. Useful if you use project-level budgets. |
 
 Restart `npm run dev` after adding env vars so Next.js can pick them up.
+
+Note: exported environment variables override `.env.local`. If you have `OPENAI_API_KEY` set in your shell/profile, Next.js will use that value instead of the one in `.env.local`.
 
 ## Available Scripts
 

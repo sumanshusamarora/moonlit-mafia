@@ -83,7 +83,12 @@ export function CreateGameForm() {
   const handleTestModeToggle = (checked: boolean) => {
     setIsTestModeEnabled(checked);
     form.setValue("isTestMode", checked, { shouldDirty: true });
-    if (!checked) {
+    if (checked) {
+      const current = form.getValues("testPlayerCount");
+      if (current === undefined) {
+        form.setValue("testPlayerCount", 4, { shouldDirty: true });
+      }
+    } else {
       form.setValue("testPlayerCount", undefined, { shouldDirty: true });
     }
   };
@@ -116,7 +121,7 @@ export function CreateGameForm() {
               <Label htmlFor="hostName">Your display name</Label>
               <Input
                 id="hostName"
-                placeholder="Narrator Nora"
+                placeholder="God Nora"
                 {...form.register("hostName")}
                 required
               />

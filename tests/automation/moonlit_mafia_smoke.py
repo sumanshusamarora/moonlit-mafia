@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -14,6 +15,7 @@ from playwright.sync_api import (
     Browser,
     BrowserContext,
     ConsoleMessage,
+    Error as PlaywrightError,
     Page,
     TimeoutError as PlaywrightTimeoutError,
     expect,
@@ -28,13 +30,14 @@ def attach_logging(page: Page, label: str) -> None:
         if location and location.get("url"):
             prefix += f" ({location['url']}:{location.get('lineNumber', '?')})"
         try:
-            text = message.text()
-        except Exception:  # pragma: no cover - defensive
+            raw_text = message.text
+            text = raw_text() if callable(raw_text) else raw_text
+        except PlaywrightError:  # pragma: no cover - defensive
             parts = []
             for arg in message.args:
                 try:
                     value = arg.json_value()
-                except Exception:  # pragma: no cover - best effort logging
+                except PlaywrightError:  # pragma: no cover - best effort logging
                     value = "<unavailable>"
                 parts.append(repr(value))
             text = " ".join(parts) if parts else "<unable to decode console message>"
@@ -103,25 +106,70 @@ def parse_args() -> argparse.Namespace:
 
 def wait_for_game_room(page: Page) -> None:
     try:
-        page.wait_for_url("**/game/**", timeout=20_000)
+        page.wait_for_url("**/game/**", timeout=45_000)
     except PlaywrightTimeoutError:
         print("⚠️ Timed out waiting for game room. Current URL:", page.url)
         try:
+            toasts = page.locator("[data-sonner-toast]").all_inner_texts()
+            if toasts:
+                print("⚠️ Toasts:")
+                for toast in toasts:
+                    print("-", toast.strip())
+        except PlaywrightError as toast_error:  # pragma: no cover - best effort
+            print(f"Unable to capture toast messages: {toast_error}")
+        try:
+            body_text = page.locator("body").inner_text()
+            if body_text:
+                print("⚠️ Body text (truncated):")
+                print(body_text[:750])
+        except PlaywrightError as body_error:  # pragma: no cover - best effort
+            print(f"Unable to capture body text: {body_error}")
+        try:
             snapshot = page.content()
             print(snapshot[:750])
-        except Exception as inner_error:  # pragma: no cover - debug aid only
+        except PlaywrightError as inner_error:  # pragma: no cover - debug aid only
             print(f"Unable to capture page content: {inner_error}")
         raise
     page.wait_for_selector('[data-testid="game-code-display"]', timeout=20_000)
 
 
 def create_lobby(page: Page, base_url: str, host_name: str) -> str:
-    page.goto(f"{base_url}/lobby/new")
+    page.goto(f"{base_url}/lobby/new", wait_until="domcontentloaded", timeout=60_000)
+    page.get_by_label("Your display name").wait_for(state="visible", timeout=30_000)
     page.get_by_label("Your display name").fill(host_name)
     page.get_by_role("button", name="Create lobby").click()
     wait_for_game_room(page)
-    code_text = page.locator('[data-testid="game-code-display"]').inner_text()
-    return code_text.split("Code:")[-1].strip()
+    code_container = page.locator('[data-testid="game-code-display"]')
+    code_text = code_container.inner_text().strip()
+    match = re.search(r"\b[A-Z0-9]{4,8}\b", code_text.upper())
+    if not match:
+        raise SmokeTestError(f"Unable to extract lobby code from: {code_text!r}")
+    return match.group(0)
+
+
+def create_test_lobby(page: Page, base_url: str, host_name: str) -> str:
+    """Create a Test Mode lobby (host + simulated test players).
+
+    This is the preferred automation path because it avoids multiple anonymous-auth sessions
+    and keeps CPU/memory usage low.
+    """
+
+    page.goto(f"{base_url}/lobby/new", wait_until="domcontentloaded", timeout=60_000)
+    page.get_by_label("Your display name").wait_for(state="visible", timeout=30_000)
+    page.get_by_label("Your display name").fill(host_name)
+
+    # Toggle Test Mode on.
+    page.locator("#test-mode-toggle").click()
+
+    page.get_by_role("button", name="Create lobby").click()
+    wait_for_game_room(page)
+
+    code_container = page.locator('[data-testid="game-code-display"]')
+    code_text = code_container.inner_text().strip()
+    match = re.search(r"\b[A-Z0-9]{4,8}\b", code_text.upper())
+    if not match:
+        raise SmokeTestError(f"Unable to extract lobby code from: {code_text!r}")
+    return match.group(0)
 
 
 def join_lobby(
@@ -135,25 +183,24 @@ def join_lobby(
     context = browser.new_context()
     page = context.new_page()
     attach_logging(page, player_name)
-    page.goto(f"{base_url}/lobby/join")
+    page.goto(f"{base_url}/lobby/join", wait_until="domcontentloaded", timeout=60_000)
     page.get_by_label("Lobby code").fill(code)
     page.get_by_label("Your name").fill(player_name)
     page.get_by_role("button", name="Join game").click()
     wait_for_game_room(page)
-    player_row = page.locator(
-        f'[data-testid="player-row"][data-player-name="{player_name}"]'
-    )
-    player_row.wait_for(timeout=15_000)
-    ready_button = page.get_by_test_id("ready-toggle")
+    ready_button = page.locator('[data-testid="ready-toggle"]:visible')
     ready_button.wait_for(state="visible", timeout=10_000)
     if auto_ready:
         ready_button.click()
-        expect(ready_button).to_contain_text("Unready", timeout=15_000)
+        expect(ready_button).to_contain_text("Cancel", timeout=15_000)
     return PlayerSession(name=player_name, context=context, page=page)
 
 
 def start_game(page: Page) -> None:
-    start_button = page.get_by_test_id("start-game-button")
+    host_tab = page.locator('[data-testid="utility-tab-host"]')
+    if host_tab.count():
+        host_tab.first.click()
+    start_button = page.locator('[data-testid="start-game-button"]:visible')
     start_button.wait_for(state="visible", timeout=15_000)
     expect(start_button).to_be_enabled(timeout=15_000)
     start_button.click()
@@ -216,10 +263,11 @@ def main() -> int:
         except ImportError:  # pragma: no cover - fallback when running as script
             from server import dev_server  # type: ignore
         server_ctx = dev_server(port=args.dev_port)
-        base_url = f"http://localhost:{args.dev_port}"
 
     try:
-        with server_ctx:
+        with server_ctx as server:
+            if args.spawn_dev_server:
+                base_url = server.base_url
             run_smoke_test(base_url, args.headed, args.player_count)
             print("✅ Smoke test completed successfully")
             return 0

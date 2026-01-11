@@ -11,9 +11,9 @@ interface AppShellProps {
 
 export function AppShell({ children, headerSlot }: AppShellProps) {
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-b from-background to-background/60">
-      <header className="sticky top-0 z-40 border-b border-border/60 backdrop-blur bg-background/80">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-4">
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-[1800px] items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2 text-lg font-semibold">
             <MoonStarIcon className="h-5 w-5 text-primary" aria-hidden />
             Moonlit Mafia
@@ -29,7 +29,7 @@ export function AppShell({ children, headerSlot }: AppShellProps) {
           </div>
         </div>
       </header>
-      <main className={cn("mx-auto w-full max-w-6xl flex-1 px-6 py-8")}>{children}</main>
+      <main className={cn("mx-auto w-full max-w-[1800px] flex-1 px-6 py-8")}>{children}</main>
     </div>
   );
 }

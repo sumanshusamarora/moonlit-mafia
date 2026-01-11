@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -16,14 +15,19 @@ import {
   clearVote,
 } from "@/lib/game/service";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { ChevronDown } from "lucide-react";
 
 interface AdminControlPanelProps {
   game: MafiaGame;
+  variant?: "default" | "minimal";
+  layout?: "tabs" | "accordion";
 }
 
-export function AdminControlPanel({ game }: AdminControlPanelProps) {
+export function AdminControlPanel({ game, variant = "default", layout = "tabs" }: AdminControlPanelProps) {
   const [activePlayerTab, setActivePlayerTab] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [openPlayers, setOpenPlayers] = useState<Record<string, boolean>>({});
 
   // Only show in test mode
   if (!game.isTestMode) {
@@ -110,25 +114,298 @@ export function AdminControlPanel({ game }: AdminControlPanelProps) {
   const currentVote = (playerUid: string) => 
     game.votes?.find(v => v.voterUid === playerUid);
 
-  return (
-    <Card className="border-2 border-yellow-500/50 bg-yellow-500/5">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <span>🧪 Admin Control Panel</span>
-          <Badge variant="outline" className="ml-auto border-yellow-500 text-yellow-600">
-            Test Mode Only
-          </Badge>
-        </CardTitle>
-        <p className="text-xs text-muted-foreground">
-          Control actions for all players. Use this to test game mechanics.
+  const containerClasses =
+    variant === "minimal"
+      ? "flex flex-col gap-4 rounded-2xl bg-surface p-5 text-textPrimary shadow-lg ring-1 ring-border/60"
+      : "flex flex-col gap-4 rounded-xl border-2 border-yellow-500/50 bg-yellow-500/5 p-4";
+
+  const renderPlayerSummary = (player: GamePlayer) => (
+    <div className={variant === "minimal" ? "rounded-2xl bg-white/5 p-4 ring-1 ring-white/10" : "space-y-2 rounded-lg border bg-muted/50 p-3"}>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={cn("text-sm font-medium", variant === "minimal" ? "text-white" : "text-foreground")}>{player.name}</span>
+        {player.isTestPlayer && (
+          <Badge variant="secondary" className="text-xs">Test Player</Badge>
+        )}
+        {player.isHost && (
+          <Badge variant="default" className="text-xs">Admin</Badge>
+        )}
+      </div>
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-2 text-xs",
+          variant === "minimal" ? "text-white/70" : "text-muted-foreground"
+        )}
+      >
+        <div>
+          <span className={variant === "minimal" ? "opacity-60" : "text-muted-foreground"}>Role:</span>
+          <span className={cn("ml-2 font-semibold", variant === "minimal" ? "text-white" : "text-foreground")}>
+            {player.role ? player.role.charAt(0).toUpperCase() + player.role.slice(1) : "Not assigned"}
+          </span>
+        </div>
+        <div>
+          <span className={variant === "minimal" ? "opacity-60" : "text-muted-foreground"}>Status:</span>
+          <span className={cn("ml-2 font-semibold", variant === "minimal" ? "text-white" : "text-foreground")}>
+            {player.isAlive ? "Alive" : "Dead"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderNightActions = (player: GamePlayer) => {
+    if (game.phase !== "night" || !player.isAlive) {
+      return null;
+    }
+
+    if (!player.role) {
+      return (
+        <p className={cn("text-xs", variant === "minimal" ? "text-white/60" : "text-muted-foreground")}>
+          Role unknown. Assign roles in the lobby to enable simulation.
         </p>
-      </CardHeader>
-      <CardContent>
+      );
+    }
+
+    return (
+      <div className="space-y-3">
+        <h4 className={cn("text-sm font-semibold", variant === "minimal" ? "text-white" : "text-foreground")}>Night actions</h4>
+
+        {player.role === "mafia" && game.nightState?.stage === "mafia" && (
+          <div className="space-y-2">
+            <p className={cn("text-xs", variant === "minimal" ? "text-white/60" : "text-muted-foreground")}>Select elimination target:</p>
+            <div className="grid gap-2">
+              {alivePlayers.filter(p => p.role !== "mafia").map((target) => (
+                <Button
+                  key={target.uid}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleMafiaAction(player.uid, target.uid)}
+                  disabled={busy}
+                  className="justify-start"
+                >
+                  Eliminate {target.name}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {player.role === "doctor" && game.nightState?.stage === "doctor" && (
+          <div className="space-y-2">
+            <p className={cn("text-xs", variant === "minimal" ? "text-white/60" : "text-muted-foreground")}>Select player to protect:</p>
+            <div className="grid gap-2">
+              {alivePlayers.map((target) => (
+                <Button
+                  key={target.uid}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleDoctorAction(player.uid, target.uid)}
+                  disabled={busy}
+                  className="justify-start"
+                >
+                  Protect {target.name}
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {player.role === "detective" && game.nightState?.stage === "detective" && (
+          <div className="space-y-2">
+            <p className={cn("text-xs", variant === "minimal" ? "text-white/60" : "text-muted-foreground")}>Select player to investigate:</p>
+            <div className="grid gap-2">
+              {alivePlayers.filter(p => p.uid !== player.uid).map((target) => (
+                <Button
+                  key={target.uid}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleDetectiveAction(player.uid, target.uid)}
+                  disabled={busy}
+                  className="justify-start"
+                >
+                  Investigate {target.name}
+                </Button>
+              ))}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => handleDetectiveSkip(player.uid)}
+                disabled={busy}
+              >
+                Skip Investigation
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {player.role && !["mafia", "doctor", "detective"].includes(player.role) && (
+          <p className={cn("text-xs", variant === "minimal" ? "text-white/60" : "text-muted-foreground")}>
+            This role has no night actions.
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  const renderDayActions = (player: GamePlayer) => {
+    if (game.phase !== "day" || !player.isAlive) {
+      return null;
+    }
+
+    return (
+      <div className="space-y-3">
+        <h4 className={cn("text-sm font-semibold", variant === "minimal" ? "text-white" : "text-foreground")}>Day actions</h4>
+        <div className="space-y-2">
+          <p className={cn("text-xs", variant === "minimal" ? "text-white/60" : "text-muted-foreground")}>Vote to eliminate:</p>
+          {currentVote(player.uid) && (
+            <div className={cn(
+              "rounded-xl p-3 text-xs",
+              variant === "minimal" ? "bg-primary/15 text-white" : "bg-primary/10 text-primary-foreground"
+            )}>
+              Current vote: {alivePlayers.find(p => p.uid === currentVote(player.uid)?.targetUid)?.name}
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => handleClearDayVote(player.uid)}
+                disabled={busy}
+                className="ml-2 h-6 px-2"
+              >
+                Clear
+              </Button>
+            </div>
+          )}
+          <div className="grid gap-2">
+            {alivePlayers.filter(p => p.uid !== player.uid).map((target) => (
+              <Button
+                key={target.uid}
+                size="sm"
+                variant={currentVote(player.uid)?.targetUid === target.uid ? "default" : "outline"}
+                onClick={() => handleDayVote(player.uid, target.uid)}
+                disabled={busy}
+                className="justify-start"
+              >
+                Vote {target.name}
+              </Button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderEliminationNotice = (player: GamePlayer) => {
+    if (player.isAlive) {
+      return null;
+    }
+
+    return (
+      <p className={cn("text-sm", variant === "minimal" ? "text-white/60" : "text-muted-foreground")}>
+        This player has been eliminated and cannot perform actions.
+      </p>
+    );
+  };
+
+  const renderPlayerBody = (player: GamePlayer) => (
+    <div className="space-y-4">
+      {renderPlayerSummary(player)}
+      {renderNightActions(player)}
+      {renderDayActions(player)}
+      {renderEliminationNotice(player)}
+    </div>
+  );
+
+  const toggleAccordion = (playerUid: string) => {
+    setOpenPlayers((prev) => ({
+      ...prev,
+      [playerUid]: !prev[playerUid],
+    }));
+  };
+
+  return (
+    <div className={containerClasses}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2
+            className={cn(
+              "flex items-center gap-2 text-lg font-semibold",
+              variant === "minimal" ? "text-white" : "text-foreground"
+            )}
+          >
+            <span>🧪 Admin Control Panel</span>
+            <Badge variant="outline" className={variant === "minimal" ? "border-yellow-500/60 text-yellow-400" : "border-yellow-500 text-yellow-600"}>
+              Test Mode Only
+            </Badge>
+          </h2>
+          <p className={variant === "minimal" ? "mt-1 text-xs text-white/60" : "text-xs text-muted-foreground"}>
+            Control actions for all players. Use this suite to simulate scenarios.
+          </p>
+        </div>
+      </div>
+      {layout === "accordion" ? (
+        <div className="space-y-3">
+          {game.players.map((player) => {
+            const isOpen = openPlayers[player.uid] ?? player.isAlive;
+            return (
+              <div
+                key={player.uid}
+                className={cn(
+                  "overflow-hidden rounded-2xl ring-1 transition",
+                  variant === "minimal" ? "bg-white/5 ring-white/10" : "bg-background ring-border/40"
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleAccordion(player.uid)}
+                  className={cn(
+                    "flex w-full items-center justify-between px-4 py-3 text-left",
+                    variant === "minimal" ? "bg-white/10 text-white" : "bg-muted/40 text-foreground"
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">{player.name}</span>
+                    {!player.isAlive && (
+                      <span className={cn("text-xs uppercase tracking-widest", variant === "minimal" ? "text-white/60" : "text-muted-foreground")}>Eliminated</span>
+                    )}
+                    {player.isTestPlayer && (
+                      <span className={cn("text-xs uppercase tracking-widest", variant === "minimal" ? "text-white/60" : "text-muted-foreground")}>Test</span>
+                    )}
+                  </div>
+                  <ChevronDown
+                    className={cn("h-4 w-4 transition-transform", isOpen && "rotate-180")}
+                    aria-hidden
+                  />
+                </button>
+                {isOpen && (
+                  <div
+                    className={cn(
+                      "space-y-4 border-t p-4",
+                      variant === "minimal" ? "border-white/10" : "border-border/60"
+                    )}
+                  >
+                    {renderPlayerBody(player)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
         <Tabs value={activePlayerTab ?? game.players[0]?.uid} onValueChange={setActivePlayerTab}>
           <ScrollArea className="w-full">
-            <TabsList className="inline-flex w-max">
+            <TabsList
+              className={cn(
+                "inline-flex w-max",
+                variant === "minimal" ? "rounded-full bg-white/5 p-1" : "bg-transparent"
+              )}
+            >
               {game.players.map((player) => (
-                <TabsTrigger key={player.uid} value={player.uid}>
+                <TabsTrigger
+                  key={player.uid}
+                  value={player.uid}
+                  className={cn(
+                    "rounded-full px-4 py-2 text-sm",
+                    variant === "minimal" ? "data-[state=active]:bg-white/20" : ""
+                  )}
+                >
                   {player.name}
                   {!player.isAlive && " 💀"}
                 </TabsTrigger>
@@ -137,161 +414,12 @@ export function AdminControlPanel({ game }: AdminControlPanelProps) {
           </ScrollArea>
 
           {game.players.map((player) => (
-            <TabsContent key={player.uid} value={player.uid} className="space-y-4">
-              <div className="space-y-2 rounded-lg border bg-muted/50 p-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Player Info</span>
-                  {player.isTestPlayer && (
-                    <Badge variant="secondary" className="text-xs">Test Player</Badge>
-                  )}
-                  {player.isHost && (
-                    <Badge variant="default" className="text-xs">Admin</Badge>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <span className="text-muted-foreground">Role:</span>
-                    <span className="ml-2 font-semibold">
-                      {player.role ? player.role.charAt(0).toUpperCase() + player.role.slice(1) : "Not assigned"}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Status:</span>
-                    <span className="ml-2 font-semibold">
-                      {player.isAlive ? "Alive" : "Dead"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Night Actions */}
-              {game.phase === "night" && player.isAlive && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-semibold">Night Actions</h4>
-                  
-                  {player.role === "mafia" && game.nightState?.stage === "mafia" && (
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground">Select elimination target:</p>
-                      <div className="grid gap-2">
-                        {alivePlayers.filter(p => p.role !== "mafia").map((target) => (
-                          <Button
-                            key={target.uid}
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleMafiaAction(player.uid, target.uid)}
-                            disabled={busy}
-                            className="justify-start"
-                          >
-                            Eliminate {target.name}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {player.role === "doctor" && game.nightState?.stage === "doctor" && (
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground">Select player to protect:</p>
-                      <div className="grid gap-2">
-                        {alivePlayers.map((target) => (
-                          <Button
-                            key={target.uid}
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleDoctorAction(player.uid, target.uid)}
-                            disabled={busy}
-                            className="justify-start"
-                          >
-                            Protect {target.name}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {player.role === "detective" && game.nightState?.stage === "detective" && (
-                    <div className="space-y-2">
-                      <p className="text-xs text-muted-foreground">Select player to investigate:</p>
-                      <div className="grid gap-2">
-                        {alivePlayers.filter(p => p.uid !== player.uid).map((target) => (
-                          <Button
-                            key={target.uid}
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleDetectiveAction(player.uid, target.uid)}
-                            disabled={busy}
-                            className="justify-start"
-                          >
-                            Investigate {target.name}
-                          </Button>
-                        ))}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDetectiveSkip(player.uid)}
-                          disabled={busy}
-                        >
-                          Skip Investigation
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {player.role && !["mafia", "doctor", "detective"].includes(player.role) && (
-                    <p className="text-xs text-muted-foreground">
-                      This role has no night actions.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Day Actions */}
-              {game.phase === "day" && player.isAlive && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-semibold">Day Actions</h4>
-                  <div className="space-y-2">
-                    <p className="text-xs text-muted-foreground">Vote to eliminate:</p>
-                    {currentVote(player.uid) && (
-                      <div className="rounded-md bg-primary/10 p-2 text-xs">
-                        Current vote: {alivePlayers.find(p => p.uid === currentVote(player.uid)?.targetUid)?.name}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleClearDayVote(player.uid)}
-                          disabled={busy}
-                          className="ml-2 h-6 px-2"
-                        >
-                          Clear
-                        </Button>
-                      </div>
-                    )}
-                    <div className="grid gap-2">
-                      {alivePlayers.filter(p => p.uid !== player.uid).map((target) => (
-                        <Button
-                          key={target.uid}
-                          size="sm"
-                          variant={currentVote(player.uid)?.targetUid === target.uid ? "default" : "outline"}
-                          onClick={() => handleDayVote(player.uid, target.uid)}
-                          disabled={busy}
-                          className="justify-start"
-                        >
-                          Vote {target.name}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {!player.isAlive && (
-                <p className="text-sm text-muted-foreground">
-                  This player has been eliminated and cannot perform actions.
-                </p>
-              )}
+            <TabsContent key={player.uid} value={player.uid} className="space-y-4 pt-4">
+              {renderPlayerBody(player)}
             </TabsContent>
           ))}
         </Tabs>
-      </CardContent>
-    </Card>
+      )}
+    </div>
   );
 }
