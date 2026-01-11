@@ -1004,7 +1004,7 @@ export default function GameRoomPage() {
               )}
               
               {/* Chat Panel */}
-              <div className="h-[400px]">
+              <div className="flex min-h-0 flex-1" style={{ height: 'max(50dvh, 400px)' }}>
                 <ChatPanel
                   messages={messages}
                   onSend={handleSendMessage}

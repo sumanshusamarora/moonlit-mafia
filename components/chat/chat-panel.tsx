@@ -144,8 +144,8 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
     : "text-base font-semibold capitalize";
 
   const transcriptClasses = variant === "minimal"
-    ? "h-64 flex-1 overflow-y-auto rounded-2xl bg-muted/20 p-0.5 ring-1 ring-border/60"
-    : "h-64 flex-1 overflow-y-auto rounded-md border border-border/60 bg-background/60";
+    ? "min-h-0 flex-1 overflow-y-auto rounded-2xl bg-muted/20 p-0.5 ring-1 ring-border/60"
+    : "min-h-0 flex-1 overflow-y-auto rounded-md border border-border/60 bg-background/60";
 
   const messageClasses = variant === "minimal"
     ? "flex flex-col gap-1 rounded-2xl bg-background/40 p-4 text-sm text-textSecondary"
