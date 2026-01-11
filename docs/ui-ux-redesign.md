@@ -106,7 +106,7 @@ Doctor saves
 
 Mafia kills
 
-Narrator events
+God events
 
 Example:
 
@@ -153,7 +153,7 @@ Tabs (Scrollable)
 
 Chat
 
-Activity (Narrator + system)
+Activity (God + system)
 
 Host (only for host)
 

@@ -224,6 +224,10 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
         <div ref={viewportRef} className={transcriptClasses}>
           <div className="flex flex-col gap-3 p-4">
             {sortedMessages.map((message, index) => {
+              const displayAuthorName =
+                message.authorUid === "system" && message.authorName === "Narrator"
+                  ? "God"
+                  : message.authorName;
               return (
                 <div
                   key={message.id || `${message.createdAt}-${message.authorUid}-${index}`}
@@ -233,7 +237,7 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
                   )}
                 >
                   <div className="flex items-center justify-between text-xs text-textSecondary">
-                    <span className="font-semibold text-textPrimary">{message.authorName}</span>
+                    <span className="font-semibold text-textPrimary">{displayAuthorName}</span>
                     <span>{formatRelative(message.createdAt)}</span>
                   </div>
                   {message.voiceUrl ? (
@@ -245,7 +249,7 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
                       }}
                       voiceUrl={message.voiceUrl}
                       duration={message.voiceDuration || 0}
-                      authorName={message.authorName}
+                      authorName={displayAuthorName}
                     />
                   ) : (
                     <>

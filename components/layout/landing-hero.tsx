@@ -39,7 +39,7 @@ export function LandingHero() {
       </div>
       <Card className="border border-primary/20 bg-primary/5">
         <CardContent className="space-y-4 p-8">
-          <h2 className="text-2xl font-semibold">A control panel built for narrators</h2>
+          <h2 className="text-2xl font-semibold">A control panel built for gods</h2>
           <ul className="space-y-3 text-sm text-muted-foreground">
             <li>• Configure roles per session with instant previews</li>
             <li>• Track player status and ready checks at a glance</li>

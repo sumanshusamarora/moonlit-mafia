@@ -917,6 +917,8 @@ export const resolveNight = async (gameId: string) => {
   const gameRef = doc(db, GAMES_COLLECTION, gameId);
   let message: string | null = null;
   let eliminatedName: string | null = null;
+  let eliminatedUid: string | null = null;
+  let savedByDoctor = false;
   let messagePhase: MafiaGame["phase"] = "day";
 
   await runTransaction(db, async (transaction) => {
@@ -936,6 +938,7 @@ export const resolveNight = async (gameId: string) => {
     const players = [...game.players];
     const targetUid = nightState.lockedTargetUid;
     const savedUid = nightState.doctorTargetUid;
+    savedByDoctor = !!(savedUid && targetUid && targetUid === savedUid);
     const dayDurationMs = game.config.dayDurationMinutes * 60 * 1000;
 
     if (targetUid && targetUid !== savedUid) {
@@ -945,6 +948,7 @@ export const resolveNight = async (gameId: string) => {
         if (player.isAlive) {
           players[playerIndex] = { ...player, isAlive: false };
           eliminatedName = player.name;
+          eliminatedUid = player.uid;
         }
       }
     }
@@ -983,26 +987,26 @@ export const resolveNight = async (gameId: string) => {
     messagePhase = "day";
   });
 
-  // Post the basic night outcome message
-  if (message) {
-    await recordSystemMessage(gameId, message, messagePhase);
-  }
-
-  // Generate AI commentary for night events
+  // Generate AI commentary for night events. If commentary is produced,
+  // post it as the single system message for the phase; otherwise fall back
+  // to the basic outcome message. This prevents duplicate messages (template
+  // + AI) appearing consecutively.
   const gameData = (await getDoc(gameRef)).data() as MafiaGame;
-  const eliminatedPlayer = gameData.players.find(p => p.name === eliminatedName);
-  const doctorSavedSomeone = !!(gameData.nightState?.doctorTargetUid && 
-                             gameData.nightState?.lockedTargetUid === gameData.nightState?.doctorTargetUid);
-  
+  const eliminatedPlayer = eliminatedUid
+    ? gameData.players.find((p) => p.uid === eliminatedUid)
+    : null;
+
   const commentary = await generateNightCommentary({
     eliminatedName: eliminatedName || undefined,
     eliminatedRole: (eliminatedPlayer?.role ?? undefined) as GameRole | undefined,
-    savedByDoctor: doctorSavedSomeone,
+    savedByDoctor,
     round: gameData.round,
   });
 
   if (commentary) {
     await recordSystemMessage(gameId, commentary, messagePhase);
+  } else if (message) {
+    await recordSystemMessage(gameId, message, messagePhase);
   }
 
   // Check win conditions after night elimination
@@ -1309,7 +1313,7 @@ export const recordSystemMessage = async (
 ) => {
   await postMessage(gameId, {
     authorUid: "system",
-    authorName: "Narrator",
+    authorName: "God",
     body: text,
     createdAt: Date.now(),
     gameId,

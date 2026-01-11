@@ -241,20 +241,24 @@ export default function GameRoomPage() {
       }
     }
 
-    const narratorMessages = (messages ?? [])
-      .filter((msg) => msg.authorUid === "system" && msg.authorName === "Narrator")
+    const godMessages = (messages ?? [])
+      .filter(
+        (msg) =>
+          msg.authorUid === "system" &&
+          (msg.authorName === "God" || msg.authorName === "Narrator")
+      )
       .sort((a, b) => b.createdAt - a.createdAt);
 
-    const latestNarrator = narratorMessages[0];
-    if (latestNarrator) {
+    const latestGod = godMessages[0];
+    if (latestGod) {
       results.push({
-        id: `narrator-${latestNarrator.id}`,
+        id: `god-${latestGod.id}`,
         icon: "📖",
-        title: "Narrator Update",
-        description: latestNarrator.body,
-        meta: "Narrator",
+        title: "God Update",
+        description: latestGod.body,
+        meta: "God",
         tone: "info",
-        timestamp: latestNarrator.createdAt,
+        timestamp: latestGod.createdAt,
       });
     }
 

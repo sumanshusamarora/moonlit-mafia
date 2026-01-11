@@ -12,6 +12,7 @@ import { firebaseConfig } from "./config";
 let app = getApps()[0];
 
 if (!app) {
+  assertFirebaseConfig();
   app = initializeApp(firebaseConfig);
 }
 
@@ -42,3 +43,19 @@ export const ensureAnonymousAuth = async () => {
   }
   return authInstance;
 };
+
+function assertFirebaseConfig() {
+  const missing: string[] = [];
+  if (!firebaseConfig.apiKey) missing.push("NEXT_PUBLIC_FIREBASE_API_KEY");
+  if (!firebaseConfig.authDomain) missing.push("NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN");
+  if (!firebaseConfig.projectId) missing.push("NEXT_PUBLIC_FIREBASE_PROJECT_ID");
+  if (!firebaseConfig.appId) missing.push("NEXT_PUBLIC_FIREBASE_APP_ID");
+
+  if (missing.length) {
+    throw new Error(
+      `Missing Firebase env vars: ${missing.join(", ")}. ` +
+        "Check `.env.local`, ensure they start with NEXT_PUBLIC_, and restart the dev server. " +
+        "Also verify you don't have a shell-exported NEXT_PUBLIC_FIREBASE_* overriding `.env.local`."
+    );
+  }
+}

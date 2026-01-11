@@ -121,7 +121,7 @@ export function CreateGameForm() {
               <Label htmlFor="hostName">Your display name</Label>
               <Input
                 id="hostName"
-                placeholder="Narrator Nora"
+                placeholder="God Nora"
                 {...form.register("hostName")}
                 required
               />

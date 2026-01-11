@@ -111,8 +111,10 @@ export function useAIDefenseDraft(
 
       if (!response.ok) {
         let message = "Failed to generate defense";
+        let payload: unknown = null;
         try {
-          const data = await response.json();
+          payload = await response.json();
+          const data = payload as { message?: unknown; error?: unknown };
           if (typeof data?.message === "string" && data.message.trim()) {
             message = data.message;
           } else if (typeof data?.error === "string" && data.error.trim()) {
@@ -121,6 +123,11 @@ export function useAIDefenseDraft(
         } catch {
           // Ignore parsing errors; fall back to generic message.
         }
+
+        console.error("AI defense API request failed", {
+          status: response.status,
+          payload,
+        });
         throw new Error(message);
       }
 
