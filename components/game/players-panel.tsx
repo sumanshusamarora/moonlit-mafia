@@ -36,12 +36,18 @@ export function PlayersPanel({
     const statusLabel = player.isAlive ? (player.ready ? "Ready" : "Not ready") : "Eliminated";
     const mafiaVisible = viewerRole === "mafia" && player.role === "mafia";
     const detectiveRevealed = player.detectiveRevealed ?? false;
+    
+    // Test Mode: Admin can see all test player roles
+    const isTestModeAdmin = game.isTestMode && isHost;
+    const testPlayerRoleVisible = isTestModeAdmin && player.isTestPlayer;
+    
     const showRole =
       viewerIsDead ||
       player.uid === viewerId ||
       (!player.isAlive && revealDeadRoles) ||
       mafiaVisible ||
-      detectiveRevealed;
+      detectiveRevealed ||
+      testPlayerRoleVisible; // NEW: Show role for test players in test mode to admin
 
     const canSelect = Boolean(game.isTestMode && isHost && !player.isSpectator);
     const isSelected = selectedPlayerUid === player.uid;

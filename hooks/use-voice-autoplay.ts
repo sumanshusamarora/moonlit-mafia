@@ -10,7 +10,7 @@ import type { GameMessage } from "@/types/game";
 export function useVoiceAutoplay(
   messages: GameMessage[],
   autoplayEnabled: boolean,
-  onAutoPlay: (messageId: string, voiceUrl: string) => void
+  onAutoPlay: (messageId: string, voiceUrl: string) => Promise<boolean> | boolean
 ) {
   const playedMessagesRef = useRef(new Set<string>());
 
@@ -30,12 +30,23 @@ export function useVoiceAutoplay(
         continue;
       }
 
-      // Mark as played immediately to prevent duplicates
-      playedMessagesRef.current.add(messageId);
-
-      // Trigger auto-play
+      // Try to trigger auto-play
       if (message.voiceUrl) {
-        onAutoPlay(messageId, message.voiceUrl);
+        const result = onAutoPlay(messageId, message.voiceUrl);
+        
+        // Handle both sync and async callbacks
+        if (result instanceof Promise) {
+          result.then((success) => {
+            if (success) {
+              playedMessagesRef.current.add(messageId);
+            }
+          }).catch((error) => {
+            console.error("Auto-play failed:", error);
+          });
+        } else if (result) {
+          // Only mark as played if playback actually started
+          playedMessagesRef.current.add(messageId);
+        }
       }
 
       // Only auto-play the newest message

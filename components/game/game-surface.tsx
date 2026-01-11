@@ -25,6 +25,7 @@ interface GameSurfaceProps {
   onClearVote: () => Promise<void>;
   onClearVoteAs?: (voterUid: string) => Promise<void>;
   onReadyToggle?: () => Promise<void>;
+  onStartGame?: () => Promise<void>;
 }
 
 export function GameSurface({
@@ -38,6 +39,7 @@ export function GameSurface({
   onClearVote,
   onClearVoteAs,
   onReadyToggle,
+  onStartGame,
 }: GameSurfaceProps) {
   const actualViewer = game.players.find((player) => player.uid === viewerId);
   if (!actualViewer) {
@@ -79,6 +81,10 @@ export function GameSurface({
 
   const renderActionPrompt = () => {
     if (game.phase === "lobby") {
+      const everyoneReady = game.players.every((p) => p.ready);
+      const isHost = actualViewer.isHost;
+      const canStartGame = isHost && everyoneReady && game.players.length >= 4;
+      
       return (
         <div className="space-y-3 rounded-2xl border border-border/60 bg-muted/20 p-4 text-textPrimary">
           <div className="flex items-center justify-between text-xs uppercase tracking-wide text-textSecondary">
@@ -88,7 +94,21 @@ export function GameSurface({
             </span>
           </div>
           <p className="text-sm">Waiting for everyone to ready up before the host can launch the game.</p>
-          {onReadyToggle && (
+          
+          {/* Start Game Button for Host - Primary Action */}
+          {canStartGame && onStartGame && (
+            <Button
+              onClick={onStartGame}
+              variant="default"
+              className="w-full"
+              data-testid="start-game-button-desktop"
+            >
+              Start Game
+            </Button>
+          )}
+          
+          {/* Ready Toggle for non-hosts or hosts who haven't reached start conditions */}
+          {onReadyToggle && !canStartGame && (
             <Button
               onClick={onReadyToggle}
               variant={actualViewer.ready ? "ghost" : "default"}

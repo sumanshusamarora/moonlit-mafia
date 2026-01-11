@@ -1190,6 +1190,7 @@ export default function GameRoomPage() {
           onClearVote={handleClearVote}
           onClearVoteAs={handleClearVoteAs}
           onReadyToggle={handleReadyToggle}
+          onStartGame={handleStart}
         />
 
         <ChatActionPanel
