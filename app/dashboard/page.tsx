@@ -7,6 +7,9 @@ import { GameSummaryCard } from "@/components/game/game-summary-card";
 import { useGameList } from "@/hooks/use-game-list";
 import { Skeleton } from "@/components/ui/skeleton";
 
+// Force dynamic rendering - this page requires client-side Firebase
+export const dynamic = "force-dynamic";
+
 export default function DashboardPage() {
   const { upcoming, archived, loading } = useGameList();
 

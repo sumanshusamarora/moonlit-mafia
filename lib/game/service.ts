@@ -40,7 +40,14 @@ import { joinGameSchema, createGameSchema } from "./schemas";
 const GAMES_COLLECTION = "games";
 const MESSAGES_SUBCOLLECTION = "messages";
 
-const db = getFirebaseFirestore();
+// Lazy initialization to avoid SSR issues
+let _db: ReturnType<typeof getFirebaseFirestore> | null = null;
+const getDb = () => {
+  if (!_db) {
+    _db = getFirebaseFirestore();
+  }
+  return _db;
+};
 
 const createInitialNightState = (stage: NightStage = "idle"): NightState => {
   const now = Date.now();
@@ -123,7 +130,7 @@ export const createGame = async (payload: CreateGamePayload) => {
   }
 
   const code = generateGameCode();
-  const gameRef = doc(collection(db, GAMES_COLLECTION));
+  const gameRef = doc(collection(getDb(), GAMES_COLLECTION));
 
   const now = Date.now();
   const isTestMode = parsed.isTestMode ?? false;
@@ -194,7 +201,7 @@ export const joinGameByCode = async (payload: JoinGamePayload) => {
     throw new Error("Unable to authenticate user");
   }
 
-  const gamesRef = collection(db, GAMES_COLLECTION);
+  const gamesRef = collection(getDb(), GAMES_COLLECTION);
   const snapshot = await getDocs(
     query(gamesRef, where("code", "==", parsed.code), limit(1))
   );
@@ -260,7 +267,7 @@ export const listenToGame = (
   gameId: string,
   onChange: (game: MafiaGame | null) => void
 ): Unsubscribe => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   return onSnapshot(gameRef, (snapshot) => {
     if (!snapshot.exists()) {
       onChange(null);
@@ -276,7 +283,7 @@ export const listenToMessages = (
   gameId: string,
   onChange: (messages: GameMessage[]) => void
 ): Unsubscribe => {
-  const messagesRef = collection(db, GAMES_COLLECTION, gameId, MESSAGES_SUBCOLLECTION);
+  const messagesRef = collection(getDb(), GAMES_COLLECTION, gameId, MESSAGES_SUBCOLLECTION);
   const q = query(messagesRef, orderBy("createdAt", "asc"));
   return onSnapshot(q, (snapshot) => {
     const messages: GameMessage[] = snapshot.docs.map((docSnapshot) => {
@@ -287,7 +294,7 @@ export const listenToMessages = (
 };
 
 export const postMessage = async (gameId: string, message: Omit<GameMessage, "id">) => {
-  const messagesRef = collection(db, GAMES_COLLECTION, gameId, MESSAGES_SUBCOLLECTION);
+  const messagesRef = collection(getDb(), GAMES_COLLECTION, gameId, MESSAGES_SUBCOLLECTION);
   await addDoc(messagesRef, {
     ...message,
     createdAt: Date.now(),
@@ -299,7 +306,7 @@ export const updatePlayerReadyState = async (
   playerUid: string,
   ready: boolean
 ) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   const snapshot = await getDoc(gameRef);
   if (!snapshot.exists()) {
     throw new Error("Game no longer exists");
@@ -312,7 +319,7 @@ export const updatePlayerReadyState = async (
 };
 
 export const startGame = async (gameId: string) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   const snapshot = await getDoc(gameRef);
   if (!snapshot.exists()) {
     throw new Error("Game not found");
@@ -498,12 +505,12 @@ export const startGame = async (gameId: string) => {
 };
 
 export const peekAtRoles = async (gameId: string, hostUid: string) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   let recordedPhase: MafiaGame["phase"] = "lobby";
   let hostName = "Host";
   let updated = false;
 
-  await runTransaction(db, async (transaction) => {
+  await runTransaction(getDb(), async (transaction) => {
     const snapshot = await transaction.get(gameRef);
     if (!snapshot.exists()) {
       throw new Error("Game not found");
@@ -554,10 +561,10 @@ export const peekAtRoles = async (gameId: string, hostUid: string) => {
 };
 
 export const restartLobby = async (gameId: string, hostUid: string) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   let hostName = "Host";
 
-  await runTransaction(db, async (transaction) => {
+  await runTransaction(getDb(), async (transaction) => {
     const snapshot = await transaction.get(gameRef);
     if (!snapshot.exists()) {
       throw new Error("Game not found");
@@ -604,12 +611,12 @@ export const restartLobby = async (gameId: string, hostUid: string) => {
   });
 
   // Clear messages and events on restart
-  const messagesRef = collection(db, GAMES_COLLECTION, gameId, MESSAGES_SUBCOLLECTION);
+  const messagesRef = collection(getDb(), GAMES_COLLECTION, gameId, MESSAGES_SUBCOLLECTION);
   const messagesSnapshot = await getDocs(messagesRef);
   const deleteMessagePromises = messagesSnapshot.docs.map((msgDoc) => deleteDoc(msgDoc.ref));
   await Promise.all(deleteMessagePromises);
 
-  const eventsRef = collection(db, GAMES_COLLECTION, gameId, "events");
+  const eventsRef = collection(getDb(), GAMES_COLLECTION, gameId, "events");
   const eventsSnapshot = await getDocs(eventsRef);
   const deleteEventPromises = eventsSnapshot.docs.map((eventDoc) => deleteDoc(eventDoc.ref));
   await Promise.all(deleteEventPromises);
@@ -622,10 +629,10 @@ export const restartLobby = async (gameId: string, hostUid: string) => {
 };
 
 export const submitMafiaVote = async (gameId: string, voterUid: string, targetUid: string) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   let shouldResolve = false;
 
-  await runTransaction(db, async (transaction) => {
+  await runTransaction(getDb(), async (transaction) => {
     const snapshot = await transaction.get(gameRef);
     if (!snapshot.exists()) {
       throw new Error("Game not found");
@@ -690,10 +697,10 @@ export const submitMafiaVote = async (gameId: string, voterUid: string, targetUi
 };
 
 export const submitDoctorSave = async (gameId: string, doctorUid: string, targetUid: string) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   let shouldResolve = false;
 
-  await runTransaction(db, async (transaction) => {
+  await runTransaction(getDb(), async (transaction) => {
     const snapshot = await transaction.get(gameRef);
     if (!snapshot.exists()) {
       throw new Error("Game not found");
@@ -746,11 +753,11 @@ export const submitDetectiveInvestigation = async (
   detectiveUid: string,
   targetUid: string
 ) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   let conversionMessage: string | null = null;
   let conversionPhase: MafiaGame["phase"] = "night";
 
-  await runTransaction(db, async (transaction) => {
+  await runTransaction(getDb(), async (transaction) => {
     const snapshot = await transaction.get(gameRef);
     if (!snapshot.exists()) {
       throw new Error("Game not found");
@@ -844,7 +851,7 @@ export const submitDetectiveInvestigation = async (
     });
 
     // Create detective investigation event
-    const eventsRef = collection(db, GAMES_COLLECTION, gameId, "events");
+    const eventsRef = collection(getDb(), GAMES_COLLECTION, gameId, "events");
     const investigationEvent = {
       gameId,
       type: "detective-investigation" as const,
@@ -872,9 +879,9 @@ export const submitDetectiveInvestigation = async (
 };
 
 export const skipDetectiveInvestigation = async (gameId: string, detectiveUid: string) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
 
-  await runTransaction(db, async (transaction) => {
+  await runTransaction(getDb(), async (transaction) => {
     const snapshot = await transaction.get(gameRef);
     if (!snapshot.exists()) {
       throw new Error("Game not found");
@@ -914,14 +921,14 @@ export const skipDetectiveInvestigation = async (gameId: string, detectiveUid: s
 };
 
 export const resolveNight = async (gameId: string) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   let message: string | null = null;
   let eliminatedName: string | null = null;
   let eliminatedUid: string | null = null;
   let savedByDoctor = false;
   let messagePhase: MafiaGame["phase"] = "day";
 
-  await runTransaction(db, async (transaction) => {
+  await runTransaction(getDb(), async (transaction) => {
     const snapshot = await transaction.get(gameRef);
     if (!snapshot.exists()) {
       throw new Error("Game not found");
@@ -1014,7 +1021,7 @@ export const resolveNight = async (gameId: string) => {
 };
 
 export const updateVotes = async (gameId: string, votes: VoteState[]) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   await updateDoc(gameRef, { votes });
 };
 
@@ -1022,7 +1029,7 @@ export const submitVote = async (
   gameId: string,
   vote: VoteState
 ) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   const snapshot = await getDoc(gameRef);
   if (!snapshot.exists()) return;
   const game = snapshot.data() as MafiaGame;
@@ -1111,7 +1118,7 @@ export const submitVote = async (
 };
 
 export const clearVote = async (gameId: string, voterUid: string) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   const snapshot = await getDoc(gameRef);
   if (!snapshot.exists()) return;
   const game = snapshot.data() as MafiaGame;
@@ -1120,7 +1127,7 @@ export const clearVote = async (gameId: string, voterUid: string) => {
 };
 
 export const advancePhase = async (gameId: string, nextPhase: MafiaGame["phase"]) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   const snapshot = await getDoc(gameRef);
   if (!snapshot.exists()) {
     throw new Error("Game not found");
@@ -1170,9 +1177,9 @@ export const advancePhase = async (gameId: string, nextPhase: MafiaGame["phase"]
 };
 
 export const eliminateDayCandidate = async (gameId: string, targetUid: string) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   
-  await runTransaction(db, async (transaction) => {
+  await runTransaction(getDb(), async (transaction) => {
     const snapshot = await transaction.get(gameRef);
     if (!snapshot.exists()) {
       throw new Error("Game not found");
@@ -1242,7 +1249,7 @@ export const eliminateDayCandidate = async (gameId: string, targetUid: string) =
 };
 
 export const checkWinCondition = async (gameId: string) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   const snapshot = await getDoc(gameRef);
   if (!snapshot.exists()) return;
 
@@ -1287,7 +1294,7 @@ export const checkWinCondition = async (gameId: string) => {
 };
 
 export const archiveGame = async (gameId: string) => {
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   await updateDoc(gameRef, {
     status: "completed",
     phase: "ended",
@@ -1299,7 +1306,7 @@ export const syncPhaseDeadline = async (gameId: string, targetTimestamp: number,
   if (!Number.isFinite(targetTimestamp)) {
     throw new Error("Invalid timer value");
   }
-  const gameRef = doc(db, GAMES_COLLECTION, gameId);
+  const gameRef = doc(getDb(), GAMES_COLLECTION, gameId);
   await updateDoc(gameRef, {
     phaseEndsAt: targetTimestamp,
     lastAction: note ?? "Phase timer updated",
