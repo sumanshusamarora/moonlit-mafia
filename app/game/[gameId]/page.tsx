@@ -643,6 +643,7 @@ export default function GameRoomPage() {
   
   const tabs = [
     { id: "game", label: "Game", icon: <ActivityIcon className="h-4 w-4" />, badge: unreadMessages },
+    { id: "activity", label: "Activity", icon: <ActivityIcon className="h-4 w-4" /> },
     { id: "players", label: "Players", icon: <UsersIcon className="h-4 w-4" />, badge: game.players.filter(p => p.isAlive).length },
     { id: "settings", label: "Settings", icon: <SettingsIcon className="h-4 w-4" /> },
     ...(isHost ? [{ id: "host", label: "Host", icon: <SettingsIcon className="h-4 w-4" /> }] : []),
@@ -1164,22 +1165,16 @@ export default function GameRoomPage() {
                     )}
                   </div>
                 </CollapsibleSection>
-
-                <CollapsibleSection title="Activity Timeline">
-                  <ActivityTimeline gameId={game.id} />
-                </CollapsibleSection>
               </div>
             </div>
           )}
 
-          {/* Activity Tab (non-host) */}
-          {!isHost && (
-            <div data-tab="activity" className={activeTab === "activity" ? "block pb-20" : "hidden"}>
-              <div className="p-4">
-                <ActivityTimeline gameId={game.id} />
-              </div>
+          {/* Activity Tab */}
+          <div data-tab="activity" className={activeTab === "activity" ? "block pb-20" : "hidden"}>
+            <div className="p-4">
+              <ActivityTimeline gameId={game.id} />
             </div>
-          )}
+          </div>
         </MobileTabs>
 
         {/* Floating Action Button for primary actions */}
