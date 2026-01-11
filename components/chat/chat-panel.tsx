@@ -47,17 +47,18 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
   );
 
   // Handle auto-play for voice messages
-  const handleAutoPlay = useCallback(async (messageId: string, voiceUrl: string) => {
+  const handleAutoPlay = useCallback(async (messageId: string, voiceUrl: string): Promise<boolean> => {
     const playerRef = voicePlayerRefs.current.get(messageId);
     
     if (!playerRef?.current) {
-      // Player not yet rendered, will be auto-played when rendered
-      return;
+      // Player not yet rendered, retry on next render
+      return false;
     }
 
     try {
       await playerRef.current.play();
       setAutoplayBlocked(false);
+      return true; // Successfully started playback
     } catch (error) {
       // Browser blocked auto-play, show soft hint
       console.warn("Auto-play was blocked by browser:", error);
@@ -65,6 +66,7 @@ export function ChatPanel({ messages, onSend, onSendVoice, phase, disabled, auto
       
       // Auto-dismiss the hint after a few seconds
       setTimeout(() => setAutoplayBlocked(false), 5000);
+      return false; // Playback failed
     }
   }, []);
 
