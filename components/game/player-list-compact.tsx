@@ -89,7 +89,7 @@ export function PlayerListCompact({
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0">👑</Badge>
                 )}
                 {player.isTestPlayer && (
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Test</Badge>
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0" aria-label="Test player">Test</Badge>
                 )}
                 {showRole && player.role && (
                   <Tooltip>
@@ -133,6 +133,7 @@ export function PlayerListCompact({
               data-testid="player-row"
               data-player-name={player.name}
               aria-pressed={isSelected}
+              aria-label={`Select test player ${player.name}`}
             >
               {playerCard}
             </button>
