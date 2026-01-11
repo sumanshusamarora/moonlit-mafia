@@ -941,7 +941,7 @@ export default function GameRoomPage() {
                     🧪 Acting as: {game.players.find(p => p.uid === testModeViewerUid)?.name ?? 'Unknown Player'}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Go to Players tab to switch back or select another player
+                    Use the dropdown below to switch players or return to your view
                   </p>
                 </div>
               )}
