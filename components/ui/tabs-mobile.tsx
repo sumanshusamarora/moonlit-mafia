@@ -22,13 +22,13 @@ export function MobileTabs({ tabs, activeTab, onTabChange, children }: MobileTab
     <div className="flex h-full flex-col">
       {/* Tab Navigation - Fixed at bottom on mobile */}
       <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:relative md:border-b md:border-t-0">
-        <div className="flex items-center justify-around">
+        <div className="flex items-center overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
               className={cn(
-                "relative flex flex-1 flex-col items-center gap-1 px-3 py-3 text-xs font-medium transition-colors md:flex-row md:gap-2 md:py-2",
+                "relative flex min-w-[72px] flex-col items-center gap-1 px-3 py-3 text-xs font-medium transition-colors md:flex-row md:gap-2 md:py-2",
                 activeTab === tab.id
                   ? "text-primary"
                   : "text-muted-foreground hover:text-foreground"
