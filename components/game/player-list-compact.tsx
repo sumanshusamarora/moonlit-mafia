@@ -41,12 +41,18 @@ export function PlayerListCompact({
         {players.map((player) => {
           const mafiaVisible = viewerRole === "mafia" && player.role === "mafia";
           const detectiveRevealed = player.detectiveRevealed ?? false;
+          
+          // Test Mode: Admin can see all test player roles
+          const isTestModeAdmin = isTestMode && isHost;
+          const testPlayerRoleVisible = isTestModeAdmin && player.isTestPlayer;
+          
           const showRole =
             viewerIsDead ||
             player.uid === viewerId ||
             (!player.isAlive && revealDeadRoles) ||
             mafiaVisible ||
-            detectiveRevealed;
+            detectiveRevealed ||
+            testPlayerRoleVisible; // NEW: Show role for test players in test mode to admin
 
           // Test Mode: Admin can click test players to switch context
           const canSelect = Boolean(isTestMode && isHost && !player.isSpectator);
