@@ -33,7 +33,7 @@ import {
   syncPhaseDeadline,
 } from "@/lib/game/service";
 import { toast } from "sonner";
-import { Loader2Icon, MoonIcon, SunIcon, UsersIcon, ActivityIcon, SettingsIcon } from "lucide-react";
+import { Loader2Icon, MoonIcon, SunIcon, UsersIcon, ActivityIcon, SettingsIcon, MessageSquareIcon } from "lucide-react";
 import { SettingsPanel } from "@/components/game/settings-panel";
 import { PlayersPanel } from "@/components/game/players-panel";
 import { GameSurface } from "@/components/game/game-surface";
@@ -642,7 +642,7 @@ export default function GameRoomPage() {
       : "Game Over";
   
   const tabs = [
-    { id: "game", label: "Game", icon: <ActivityIcon className="h-4 w-4" />, badge: unreadMessages },
+    { id: "game", label: "Game", icon: <MessageSquareIcon className="h-4 w-4" />, badge: unreadMessages },
     { id: "activity", label: "Activity", icon: <ActivityIcon className="h-4 w-4" /> },
     { id: "players", label: "Players", icon: <UsersIcon className="h-4 w-4" />, badge: game.players.filter(p => p.isAlive).length },
     { id: "settings", label: "Settings", icon: <SettingsIcon className="h-4 w-4" /> },
