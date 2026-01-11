@@ -61,6 +61,14 @@ export default function GameRoomPage() {
   const [utilityTab, setUtilityTab] = useState("chat");
   const [testModeViewerUid, setTestModeViewerUid] = useState<string | null>(null);
 
+  // Centralized function to switch active test player with optional navigation
+  const switchActiveTestPlayer = (playerId: string | null, options?: { navigateToGame?: boolean }) => {
+    setTestModeViewerUid(playerId);
+    if (options?.navigateToGame && playerId) {
+      setActiveTab("game");
+    }
+  };
+
   const viewerId = user?.uid ?? "";
   const viewer = useMemo(() => game?.players.find((player) => player.uid === viewerId), [game, viewerId]);
   const isHost = viewer?.isHost ?? false;
@@ -927,13 +935,42 @@ export default function GameRoomPage() {
           <div data-tab="game" className={activeTab === "game" ? "block pb-20" : "hidden"}>
             <div className="space-y-4 p-4">
               {/* Test Mode Indicator */}
-              {game.isTestMode && isHost && testModeViewerUid && (
+              {game.isTestMode && isHost && testModeViewerUid && testModeViewerUid !== viewerId && (
                 <div className="rounded-lg border border-primary/50 bg-primary/10 p-3 text-sm">
                   <p className="font-semibold text-primary">
                     🧪 Acting as: {game.players.find(p => p.uid === testModeViewerUid)?.name ?? 'Unknown Player'}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Go to Players tab to switch back or select another player
+                    Use the dropdown below to switch players or return to your view
+                  </p>
+                </div>
+              )}
+
+              {/* Act As Dropdown - Test Mode Only */}
+              {game.isTestMode && isHost && (
+                <div className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                  <label className="text-xs font-semibold uppercase tracking-wider text-textSecondary mb-2 block">
+                    Act as Player
+                  </label>
+                  <select
+                    value={testModeViewerUid || viewerId}
+                    onChange={(e) => switchActiveTestPlayer(e.target.value === viewerId ? null : e.target.value)}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value={viewerId}>
+                      {game.players.find(p => p.uid === viewerId)?.name ?? 'You'} (Your View)
+                    </option>
+                    {game.players
+                      .filter(p => !p.isSpectator && p.uid !== viewerId)
+                      .map(player => (
+                        <option key={player.uid} value={player.uid}>
+                          {player.name} {player.isTestPlayer ? '(Test)' : ''} {!player.isAlive ? '💀' : ''}
+                        </option>
+                      ))
+                    }
+                  </select>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Switch between players to test game flow
                   </p>
                 </div>
               )}
@@ -1001,7 +1038,7 @@ export default function GameRoomPage() {
                   isTestMode={game.isTestMode}
                   isHost={isHost}
                   selectedPlayerUid={testModeViewerUid}
-                  onSelectPlayerUid={setTestModeViewerUid}
+                  onSelectPlayerUid={(uid) => switchActiveTestPlayer(uid, { navigateToGame: true })}
                 />
               </CardContent>
             </Card>
@@ -1197,7 +1234,7 @@ export default function GameRoomPage() {
           revealDeadRoles={game.config.revealRolesOnDeath || game.phase === "ended"}
           isHost={isHost}
           selectedPlayerUid={testModeViewerUid}
-          onSelectPlayerUid={setTestModeViewerUid}
+          onSelectPlayerUid={(uid) => switchActiveTestPlayer(uid, { navigateToGame: true })}
         />
 
         <GameSurface
