@@ -10,6 +10,10 @@ interface PlayerListCompactProps {
   viewerIsDead?: boolean;
   revealDeadRoles?: boolean;
   viewerRole?: GameRole | null;
+  isTestMode?: boolean;
+  isHost?: boolean;
+  selectedPlayerUid?: string | null;
+  onSelectPlayerUid?: (uid: string | null) => void;
 }
 
 export function PlayerListCompact({
@@ -18,6 +22,10 @@ export function PlayerListCompact({
   viewerIsDead = false,
   revealDeadRoles = false,
   viewerRole = null,
+  isTestMode = false,
+  isHost = false,
+  selectedPlayerUid = null,
+  onSelectPlayerUid,
 }: PlayerListCompactProps) {
   if (!players.length) {
     return (
@@ -40,13 +48,25 @@ export function PlayerListCompact({
             mafiaVisible ||
             detectiveRevealed;
 
-          return (
+          // Test Mode: Admin can click test players to switch context
+          const canSelect = Boolean(isTestMode && isHost && !player.isSpectator);
+          const isSelected = selectedPlayerUid === player.uid;
+
+          const handleSelect = () => {
+            if (!canSelect || !onSelectPlayerUid) {
+              return;
+            }
+            onSelectPlayerUid(isSelected ? null : player.uid);
+          };
+
+          const playerCard = (
             <div
-              key={player.uid}
               className={cn(
                 "relative flex flex-col gap-1.5 rounded-lg border border-border/60 bg-background/70 p-3 transition",
                 !player.isAlive && "opacity-60 grayscale",
-                player.uid === viewerId && "ring-2 ring-primary ring-offset-1"
+                player.uid === viewerId && "ring-2 ring-primary ring-offset-1",
+                canSelect && "cursor-pointer hover:bg-muted/30 active:scale-95",
+                isSelected && "ring-2 ring-primary/50 ring-offset-1"
               )}
             >
               {/* Status indicator dot */}
@@ -67,6 +87,9 @@ export function PlayerListCompact({
               <div className="flex flex-wrap gap-1">
                 {player.isHost && (
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0">👑</Badge>
+                )}
+                {player.isTestPlayer && (
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0" aria-label="Test player">Test</Badge>
                 )}
                 {showRole && player.role && (
                   <Tooltip>
@@ -98,6 +121,25 @@ export function PlayerListCompact({
                   )}
                 </div>
               )}
+            </div>
+          );
+
+          return canSelect ? (
+            <button
+              key={player.uid}
+              type="button"
+              onClick={handleSelect}
+              className="min-h-[44px] text-left"
+              data-testid="player-row"
+              data-player-name={player.name}
+              aria-pressed={isSelected}
+              aria-label={`Select test player ${player.name}`}
+            >
+              {playerCard}
+            </button>
+          ) : (
+            <div key={player.uid} data-testid="player-row" data-player-name={player.name}>
+              {playerCard}
             </div>
           );
         })}
